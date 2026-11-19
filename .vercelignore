@@ -1,0 +1,6 @@
+.env*
+!.env.example
+data/
+docs/
+node_modules/
+.git/

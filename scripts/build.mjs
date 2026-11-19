@@ -1,0 +1,13 @@
+import { copyFile, mkdir, readdir } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+const testDirectory=new URL('../tests/',import.meta.url);
+const files=(await readdir(testDirectory)).filter(name=>name.endsWith('.test.mjs')).sort().map(name=>fileURLToPath(new URL(name,testDirectory)));
+if(!files.length)throw new Error('No tests found: refusing to publish an unverified build.');
+const result=spawnSync(process.execPath,['--test',...files],{stdio:'inherit'});
+if(result.error)throw result.error;
+if(result.status!==0)throw new Error('Build stopped: automated checks failed.');
+await copyFile(new URL('../shared/review.mjs', import.meta.url), new URL('../public/review.mjs', import.meta.url));
+await mkdir(new URL('../public/shared/',import.meta.url),{recursive:true});
+for(const name of ['report-format.mjs','report-view.mjs','document-structure.mjs','provision-graph.mjs'])await copyFile(new URL('../shared/'+name,import.meta.url),new URL('../public/shared/'+name,import.meta.url));
+await import('./build-static.mjs');
