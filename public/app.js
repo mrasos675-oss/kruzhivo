@@ -105,11 +105,11 @@ function routeChanged(){if(isAccessLink()){if(!state.account){render();return;}v
 window.addEventListener('portalroute',routeChanged);
 window.addEventListener('popstate',()=>{if(state.dirty){const target=location.href;history.replaceState(null,'',lastRouteURL);leave(()=>{clearDraft();history.pushState(null,'',target);routeChanged();});}else routeChanged();});
 window.addEventListener('hashchange',()=>{if(isAccessLink()){routeChanged();return;}const token=currentToken();history.replaceState(null,'',lastRouteURL);go(token);});
-function shell(content,active='documents',crumb='Документы'){
+function shell(content,active='documents',crumb='Документы',{checksNavigation=true}={}){
  const administrator=state.account?.role==='admin',expert=state.account?.role==='expert',home=administrator?'methodology':expert?'experts':'overview',name=state.db.profile?.fullName||state.account?.displayName||'';
  const primary=administrator?[['methodology','Работа ИИ агента']]:expert?[['experts','Главная'],['expert-done','Мои заключения'],['methodology','Работа ИИ агента'],['sources','Правовая база']]:[['overview','Главная'],['upload','Новая проверка'],['documents','Мои проверки'],['methodology','Работа ИИ агента'],['sources','Правовая база']];
  const navActive=!administrator&&!expert&&['history','experts','case-history'].includes(active)?'documents':active;
- const checksTabs=!administrator&&!expert&&['documents','history','experts','case-history'].includes(active)?'<nav class="actions queue-tabs" aria-label="Мои проверки">'+[['documents','Мои проверки'],['experts','Экспертные заключения'],['case-history','История проверок']].map(([id,title])=>A('#'+id,title,active===id?'primary':'',active===id?'aria-current="page"':'')).join('')+'</nav>':'';
+ const checksTabs=checksNavigation&&!administrator&&!expert&&['documents','history','experts','case-history'].includes(active)?'<nav class="actions queue-tabs" aria-label="Мои проверки">'+[['documents','Мои проверки'],['experts','Экспертные заключения'],['case-history','История проверок']].map(([id,title])=>A('#'+id,title,active===id?'primary':'',active===id?'aria-current="page"':'')).join('')+'</nav>':'';
  const waiting=(state.expertCases||[]).some(c=>!c.isDemo&&c.status==='waiting');
  const queueDot=id=>id==='expert-done'?`<span class="expert-queue-dot" data-expert-queue-dot ${waiting?'':'hidden'}><span class="sr-only">Есть новые проверки</span></span>`:'';
  const nav=items=>items.map(([id,title])=>`<a href="#${id}" class="${navActive===id?'active':''}" ${navActive===id?'aria-current="page"':''}>${title}${queueDot(id)}</a>`).join('');
@@ -159,13 +159,75 @@ function provisionPage(id,nodeId){
  const {r}=x;return shell(head('Пункт '+n.number,meta(x))+A('#graph/'+id,'← Назад к графу','compact')+'<section class="quote"><h2>п. '+esc(n.number)+'</h2><p class="provision-text">'+esc(n.text)+'</p></section><div class="actions">'+r.findings.map((f,i)=>n.findingIds.includes(f.id)?A('#run/'+id+'/'+i,'Замечание '+(i+1)+': '+esc(titleOf(f))):'').join('')+'</div>','documents','Пункт документа');
 }
 
-function expertRequestAction(r) {
- const caseId=(state.expertCases||[]).find(c=>c.runId===r.id)?.id||r.expertCaseId;
+function expertRequestAction(r, expertCase) {
+ const caseId=expertCase?.id||r.expertCaseId;
  if (!state.pilotMode) return B('expert-create','Запросить экспертизу','',`data-run="${r.id}"`);
- return caseId ? A('#expert-case/'+caseId,'Открыть экспертное дело') : B('expert-create','Отправить в очередь экспертов','',`data-run="${r.id}"`);
+ return caseId ? A('#expert-case/'+caseId,'Открыть дело эксперта') : B('expert-create','Отправить экспертам','',`data-run="${r.id}"`);
 }
 
-function resultsPage(id){const x=locate(id);if(!x)return missing();const {d,r,v}=x;if(r.status==='running')return runningPage(x);if(['failed','cancelled'].includes(r.status))return errorPage(x);const c=counts(r),archived=isArchived(d,r),filter=state.findingFilter?.runId===id?state.findingFilter.status:'all';return shell(`${head(r.findings.length?'Результаты проверки':'Находки не предложены',meta(x))}${workflowProgress(r)}${resultTabs(r,'findings')}${r.mode==='demo'?'<p class="sample-badge">Учебный режим · подготовленные ответы</p>':''}<div class="stack">${archived?notice('Архивный результат','Доступен только для чтения.'):''}${notice('Рассмотрено '+(c.confirmed+c.modified+c.rejected)+' из '+r.findings.length,summary(r))}<progress class="review-progress" value="${c.confirmed+c.modified+c.rejected}" max="${r.findings.length||1}"></progress><div class="actions status-filters">${[['all','Все'],['pending','Не рассмотрены'],['confirmed','Подтверждены'],['modified','Изменены'],['rejected','Отклонены']].map(([status,title])=>B('finding-filter',title,filter===status?'primary compact':'compact',`data-run="${id}" data-status="${status}" aria-pressed="${filter===status}"`)).join('')}</div></div><div class="finding-list">${r.findings.map((f,i)=>filter!=='all'&&f.decision.status!==filter?'':`<a class="card card-link finding-card" href="#run/${r.id}/${i}"><p class="eyebrow">ЗАМЕЧАНИЕ ${i+1} · ПУНКТ ${esc(f.point)}</p><h2>${esc(titleOf(f))}</h2><p>${esc(methodReference(f.factorId,state.db.catalog))}</p><blockquote>«${esc(f.quote.slice(0,120))}${f.quote.length>120?'…':''}»</blockquote><p class="meta">${esc(labels[f.decision.status])}</p><span class="status ${f.review?.verdict==='contested'?'contested':''}">Проверяющий: ${esc(verdicts[f.review?.verdict]||'Не выполнялся')}</span></a>`).join('')||notice('Нет замечаний в этой группе','Это не означает отсутствия нарушений в документе.')}</div><div class="actions review-actions">${r.findings.length?A('#run/'+r.id+'/'+Math.max(0,nextPendingIndex(r)),archived?'Посмотреть замечания':'Рассмотреть замечания','primary'):''}${A('#report/'+r.id,'Открыть отчёт ИИ')}${r.status==='completed'?expertRequestAction(r):''}<details class="more-actions"><summary>Ещё</summary><div class="actions">${A('#history/'+d.id,'История документа')}${A('#sources/'+r.id,'Источники проверки')}${A('#run-details/'+r.id,'Состав запуска')}</div></details></div>${modeCaption(r)}`,'documents','Результаты проверки');}
+function resultsPage(id) {
+ const x=locate(id);
+ if(!x)return missing();
+ const {d,r,v}=x;
+ if(r.status==='running')return runningPage(x);
+ if(['failed','cancelled'].includes(r.status))return errorPage(x);
+
+ const total=r.findings.length, c=counts(r), reviewed=total-c.pending, archived=isArchived(d,r);
+ const filter=state.findingFilter?.runId===id?state.findingFilter.status:'all';
+ const expertCase=(state.expertCases||[]).find(item=>item.runId===r.id);
+ const expertStatus=({waiting:'Ожидает эксперта',reviewing:'На проверке у эксперта',confirmed:'Заключение готово'})[expertCase?.status]
+   || (r.expertCaseId?'Передано эксперту':'Анализ ИИ завершён');
+ const filters=[
+   ['all','Все замечания',total],
+   ['pending','Не рассмотрены',c.pending],
+   ['confirmed','Подтверждены',c.confirmed],
+   ['modified','Изменены',c.modified],
+   ['rejected','Отклонены',c.rejected],
+ ];
+ const rows=r.findings.map((f,i)=>{
+   if(filter!=='all'&&f.decision.status!==filter)return '';
+   return `<li><a class="result-finding" href="#run/${r.id}/${i}">
+     <span class="result-finding-number" aria-label="Замечание ${i+1}">${i+1}</span>
+     <span class="result-finding-content"><strong>${esc(titleOf(f))}</strong><small>${esc(f.point)}</small></span>
+     ${status(f.decision.status)}
+     <span class="result-arrow" aria-hidden="true">→</span>
+   </a></li>`;
+ }).join('');
+
+ return shell(`<div class="check-results">
+   <a class="check-results-back" href="#documents">← Мои проверки</a>
+   ${head(d.name,`Версия ${v.number} · запуск №${r.number}`)}
+   <section class="card check-results-overview" aria-label="Итоги проверки">
+     <div class="check-results-summary">
+       <strong>${total?findingCount(total):'Замечания не предложены'}</strong>
+       ${total?`<span class="muted">Рассмотрено ${reviewed} из ${total}</span>`:''}
+       <span class="status ${expertCase?.status==='confirmed'?'confirmed':'running'}">${expertStatus}</span>
+       ${archived?'<span class="status">Архив · только чтение</span>':''}
+       ${r.mode==='demo'?'<span class="status">Учебный режим</span>':''}
+     </div>
+     <p class="muted">Предварительный анализ. Окончательное решение выносит эксперт.</p>
+     <div class="actions check-results-actions">
+       ${A('#report/'+r.id,'Открыть отчёт ИИ','primary')}
+       ${total?A('#run/'+r.id+'/'+Math.max(0,nextPendingIndex(r)),archived?'Посмотреть замечания':'Рассмотреть замечания'):''}
+       ${r.status==='completed'?expertRequestAction(r,expertCase):''}
+     </div>
+   </section>
+   <section class="check-results-findings" aria-labelledby="check-results-findings-title">
+     <div class="check-results-list-head">
+       <h2 id="check-results-findings-title">Замечания</h2>
+       ${total?`<label class="check-results-filter"><span class="sr-only">Фильтр по статусу замечания</span>
+         <select id="finding-status-filter" data-run="${esc(id)}">${filters.map(([value,title,count])=>`<option value="${value}" ${filter===value?'selected':''}>${title} (${count})</option>`).join('')}</select></label>`:''}
+     </div>
+     ${rows?`<ol class="check-results-list">${rows}</ol>`:`<p class="check-results-empty muted">${total?'Нет замечаний с выбранным статусом.':'Сводка по факторам и ограничения доступны в отчёте ИИ.'}</p>`}
+   </section>
+   <details class="check-results-details"><summary>Материалы проверки</summary><div class="actions">
+     ${A('#graph/'+r.id,'Граф связей','compact')}
+     ${A('#history/'+d.id,'История документа','compact')}
+     ${A('#sources/'+r.id,'Источники проверки','compact')}
+     ${A('#run-details/'+r.id,'Состав запуска','compact')}
+   </div></details>
+ </div>`,'documents','Результаты проверки',{checksNavigation:false});
+}
 
 function runningPage(x) {const {r,d}=x;return shell(`${head('Проверяем документ',meta(x))}${stepper(3)}<p class="step-caption">Шаг 3 из 3 · Анализ текста</p><div class="stack">${notice('Проверка выполняется','Результаты появятся после завершения анализа.')}<div class="card run-progress">${[['analyst','Аналитик — 12 факторов'],['reviewer','Проверяющий — поиск возражений'],['editor','Редактор — проект правки']].map(([k,n])=>`<p>${r.stages[k]==='completed'?'✓':r.stages[k]==='running'?'●':'○'} ${n} · ${esc(labels[r.stages[k]]||'Выполняется')}</p>`).join('')}</div>${notice('Окончательное решение принимает специалист','Проверка не изменяет исходный документ. Завершённые этапы сохраняются.')}<div class="actions">${A('#documents','К документам')}${A(`#run-details/${r.id}`,'Состав и ход проверки')}${B('cancel','Остановить проверку','danger',`data-run="${r.id}"`)}</div></div>${modeCaption(r)}`,'documents','Проверяем документ');}
 function errorPage(x) {return shell(`${head('Проверка не завершена',meta(x))}<div class="stack">${notice(labels[x.r.status],x.r.error||'Документ и предыдущие запуски сохранены.','error')}${x.r.findings.length?notice('Частичные результаты сохранены',`Завершённые этапы вернули ${x.r.findings.length} замечания. Решение можно будет принять в новом успешно завершённом запуске.`):''}<div class="actions">${A(`#rerun/${x.d.id}/${x.v.id}`,'Повторить запуск','primary')}${A('#documents','К документам')}${A(`#report/${x.r.id}`,'Частичный отчёт')}${A(`#run-details/${x.r.id}`,'Состав и ход проверки')}</div></div>`,'documents','Проверка не завершена');}
@@ -342,7 +404,6 @@ const handlers={
  'sample-start':async b=>{const sample=b.dataset.sample==='canonical'?{title:'Эталонный учебный регламент',text:state.db.sampleText}:SAMPLE_DOCUMENTS.find(x=>x.id===b.dataset.sample);if(!sample)throw Error('Пример не найден.');let doc=state.db.documents.find(d=>d.sample&&d.name===sample.title&&d.versions.at(-1).text===sample.text);if(!doc){const created=await api('documents',{name:sample.title,text:sample.text});await refresh();doc=state.db.documents.find(d=>d.id===created.id);}go('prepare/'+doc.id+'/'+doc.versions.at(-1).id);},
  'basis-pick':()=>{capture($('#decision-form'));const sources=state.db.sources.filter(s=>s.active&&s.verified);modal('Выбор проверенного основания',sources.length?sources.map(source=>'<section class="card stack tight"><h3>'+esc(source.title)+'</h3><p>'+esc(source.revision)+'</p><details><summary>Показать текст</summary><p class="sample-text">'+esc(source.text)+'</p></details>'+B('basis-use','Выбрать цитату','compact',`data-source="${esc(source.id)}"`)+'</section>').join(''):notice('Нет проверенных источников','Классификация по Методике показана отдельно. Добавьте проверенный источник или укажите обоснование вручную.'));},
  'basis-use':b=>{const source=state.db.sources.find(s=>s.id===b.dataset.source);modal('Цитата правового основания',`<form id="basis-select-form" class="stack" data-source="${esc(source.id)}"><h3>${esc(source.title)}</h3><p>${esc(source.revision)}</p><details><summary>Текст источника</summary><p class="sample-text">${esc(source.text)}</p></details>${field('quote','Скопируйте точную цитату применимой нормы','',{area:true,required:true,max:8000})}<button type="submit" class="btn primary">Использовать основание</button></form>`);},
- 'finding-filter':b=>{state.findingFilter={runId:b.dataset.run,status:b.dataset.status};render();},
  new:()=>leave(()=>{resetUpload();go('upload');}),
  version:b=>leave(()=>{resetUpload(b.dataset.doc);go('version/'+b.dataset.doc);}),
  menu:()=>{state.menu=!state.menu;$('.shell').classList.toggle('menu-open',state.menu);$('#mobile-nav').classList.toggle('open',state.menu);const button=$('[data-action="menu"]');button.textContent=state.menu?'Закрыть меню':'Меню';button.setAttribute('aria-expanded',String(state.menu));if(state.menu)$('#mobile-nav [data-action="menu"]')?.focus();else button.focus();},
@@ -458,6 +519,13 @@ document.addEventListener('click', event => {
   }
 });
 document.addEventListener('input',event=>{if(event.target.tagName==='TEXTAREA')fitFields(event.target.parentElement);if(event.target.closest('#upload-form'))readUploadForm();if(event.target.closest('#decision-form'))capture(event.target.closest('#decision-form'));if(event.target.closest('#reject-form')){state.rejectReason=event.target.value;state.dirty=true;}if(['document-search','example-search'].includes(event.target.id)){const id=event.target.id,pos=event.target.selectionStart;if(id==='document-search')state.search=event.target.value;else state.exampleSearch=event.target.value;render();$('#'+id).focus();$('#'+id).setSelectionRange(pos,pos);}});
+document.addEventListener('change', event => {
+ const field=event.target;
+ if(field.id!=='finding-status-filter')return;
+ state.findingFilter={runId:field.dataset.run,status:field.value};
+ render();
+ $('#finding-status-filter')?.focus({preventScroll:true});
+});
 document.addEventListener('change',event=>{if(event.target.id==='docx-input')void perform(()=>loadFile(event.target.files[0]));const form=event.target.closest('#settings-form');if(form&&event.target.name==='provider')updateProviderForm(form);if(form&&event.target.name==='protocol')updateProtocolFields(form,form.elements.protocol.value);if(form&&event.target.name==='clear'){form.elements.model.required=!event.target.checked;form.noValidate=event.target.checked;}});
 document.addEventListener('dragover',event=>{const zone=event.target.closest('#upload-zone');if(zone){event.preventDefault();zone.classList.add('dragging');}});
 document.addEventListener('dragleave',event=>{const zone=event.target.closest('#upload-zone');if(zone&&!zone.contains(event.relatedTarget))zone.classList.remove('dragging');});
