@@ -1,3 +1,4 @@
+import { createGithubHistory } from '../server/github-history.mjs';
 import { createPostgresStorage } from '../server/postgres-store.mjs';
 import { demoProfileFor } from '../server/profile.mjs';
 import { waitUntil } from '@vercel/functions';
@@ -97,7 +98,7 @@ return async function handler(req, res) {
         return store.setCredential(key,model,connection);
       }, valid: () => usesShared?shared.valid(credential.revision):store.validCredential(credential.revision),
         ...(usesShared?{reserve:()=>shared.reserve(credential.revision),release:token=>shared.release(token)}:{}) },
-      schedule,
+      schedule, history: pilotMode ? createGithubHistory(process.env.KRUZHIVO_GITHUB_TOKEN, storage) : null,
     });
     await app.handler(req, res);
   } catch (e) {

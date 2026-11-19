@@ -36,7 +36,7 @@ function finishInterrupted(run, status, message) {
 }
 const json = (res, status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
 
-export async function createApp({ dataDir = process.env.DATA_DIR || join(root, 'data'), initialKey = process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '', initialModel = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-flash', initialConnection, fetcher, store: suppliedStore, originals: suppliedOriginals, hosted = false, pilotMode = false, trainingReader = false, queueExpert = null, credentials, access, schedule, origin, reviewStore, sourceLibrary, actorId = 'local-demo', account, experts = [], bootstrapState } = {}) {
+export async function createApp({ dataDir = process.env.DATA_DIR || join(root, 'data'), initialKey = process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '', initialModel = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-flash', initialConnection, fetcher, store: suppliedStore, originals: suppliedOriginals, hosted = false, pilotMode = false, trainingReader = false, queueExpert = null, credentials, access, schedule, origin, reviewStore, sourceLibrary, actorId = 'local-demo', account, experts = [], bootstrapState, history = null } = {}) {
   const store = suppliedStore || await createStore(dataDir); const originals = suppliedOriginals || await createOriginals(dataDir); let apiKey = initialKey;
   const envConnection = process.env.LLM_PROVIDER ? { provider: process.env.LLM_PROVIDER, baseUrl: process.env.LLM_BASE_URL, protocol: process.env.LLM_PROTOCOL || 'chat-completions', model: process.env.LLM_MODEL || '', jsonMode: process.env.LLM_JSON_MODE !== 'false' } : null;
   let connection = normalizeConnection(initialConnection || (!hosted && envConnection) || (initialKey ? legacyConnection(initialModel) : emptyConnection()), { allowEmptyModel: true }); const jobs = new Map();
@@ -55,6 +55,39 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
     const result = await expertReview.create(d, v, r, { ...queueOptions, comment });
     await store.change(db => { locate(db, r.id).r.expertCaseId = result.id; });
     return result;
+  }
+
+  async function saveHistory(runId, type, data, versionNumber) {
+    try { await history.record(runId, type, data, versionNumber); }
+    catch { console.error('kruzhivo: could not queue GitHub history event'); }
+  }
+
+  async function publishHistory(runId) {
+    try { await history.flush(runId); }
+    catch { console.error('kruzhivo: GitHub history delivery deferred'); }
+  }
+
+  async function saveSubmission(runId) {
+    if (!history) return;
+    try {
+      const { d, v, r } = locate(await store.read(), runId);
+      const original = v.original ? (await originals.read(v)).toString('base64') : null;
+      await saveHistory(runId, 'submitted', {
+        document: { id:d.id, name:d.name, kind:d.kind, version:v },
+        originalDocxBase64: original,
+        submittedAt:r.createdAt,
+      });
+    } catch { console.error('kruzhivo: could not prepare GitHub submission'); }
+  }
+
+  async function saveRunResult(runId) {
+    if (!history) return;
+    try {
+      const { d, r, v } = locate(await store.read(), runId);
+      if (r.status === 'running') return;
+      await saveHistory(runId, 'result', { documentId:d.id, versionId:v.id, run:r });
+      await publishHistory(runId);
+    } catch { console.error('kruzhivo: could not prepare GitHub result'); }
   }
 
   async function start(runId, runKey, permit) {
@@ -77,7 +110,7 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
       }
     }
     catch (e) { await store.change(db => { const x = locate(db, runId).r; if (x.status === 'running') { finishInterrupted(x, 'failed', e.status ? e.message : e.name === 'TimeoutError' ? 'Превышено время ожидания модели. Создайте новый запуск.' : 'Проверка прервана. Сохранены результаты завершённых этапов.'); } }); }
-    finally { jobs.delete(runId); if(permit)await credentials.release(permit); }
+    finally { jobs.delete(runId); if(permit)await credentials.release(permit); await saveRunResult(runId); }
   }
   const canEditSources=()=>account?account.role==='expert':!hosted||access?.canManage===true;
   const availableSources=async(workspace)=>{
@@ -123,7 +156,15 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
       if(expertMatch){const [,caseId,action,number]=expertMatch;
         if(req.method==='GET'&&!action)return json(res,200,await expertReview.get(caseId));
         if(req.method==='GET'&&number){const c=await expertReview.get(caseId),bytes=expertDocx(c,Number(number));res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','Content-Disposition':'attachment; filename="expert-conclusion-v'+number+'.docx"'});return res.end(bytes);}
-        if(req.method==='POST'||req.method==='PUT'){const b=await jsonBody(req);const result=action==='accept'?await expertReview.accept(caseId,b.token,account?{...b.profile,name:account.displayName,accountId:account.id,username:account.username}:b.profile):action==='invite'?await expertReview.invite(caseId):action==='start'?await expertReview.start(caseId):action==='messages'?await expertReview.message(caseId,b.text):action==='draft'?await expertReview.save(caseId,b.text,b.revision):action==='sign'?await expertReview.sign(caseId,b.revision):action==='new-draft'?await expertReview.newDraft(caseId):null;if(result)return json(res,200,result);}
+        if(req.method==='POST'||req.method==='PUT'){const b=await jsonBody(req);const result=action==='accept'?await expertReview.accept(caseId,b.token,account?{...b.profile,name:account.displayName,accountId:account.id,username:account.username}:b.profile):action==='invite'?await expertReview.invite(caseId):action==='start'?await expertReview.start(caseId):action==='messages'?await expertReview.message(caseId,b.text):action==='draft'?await expertReview.save(caseId,b.text,b.revision):action==='sign'?await expertReview.sign(caseId,b.revision):action==='new-draft'?await expertReview.newDraft(caseId):null;if(result){
+          if(history&&action==='sign'){
+            const c=await expertReview.get(caseId);
+            const final=c.conclusions.at(-1);
+            await saveHistory(c.run.id,'conclusion',{caseId, conclusion:final},final.number);
+            if(schedule)schedule(publishHistory(c.run.id));else await publishHistory(c.run.id);
+          }
+          return json(res,200,result);
+        }}
       }
       if (req.method === 'GET' && p === '/api/methodology') return json(res, 200, methodology());
       if (req.method === 'GET' && p === '/api/bootstrap') {
@@ -185,6 +226,8 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
         const sourceSnapshot=await availableSources();
         const permit=b.mode==='api'&&credentials?.reserve?await credentials.reserve():null;
         let r;try{r = await store.change(db => { const d = findDoc(db, m[1]); if (d.runs.some(x => x.status === 'running')) throw fail('Для этого документа уже выполняется проверка.', 409); const v = d.versions.find(x => x.id === b.versionId); if (!v) throw fail('Версия не найдена.', 404); if (b.mode === 'demo') demoAnalysisCheck(v.text); const r = newRun(d, v, b.mode, sourceSnapshot, db.examples, runConnection.model); r.authorSnapshot=db.profile?Object.fromEntries(['fullName','organization','department','position'].map(k=>[k,db.profile[k]||''])):null; if (b.mode === 'api') { r.connection = runConnection; r.aiPolicy = policySnapshot(runConnection); r.aiPolicy.snapshotOrigin = 'captured_at_creation'; } d.runs.push(r); return r; });}catch(error){if(permit)await credentials.release(permit);throw error;}
+        await saveSubmission(r.id);
+        if (history && schedule) schedule(publishHistory(r.id));
         if (schedule) schedule(start(r.id, runKey, permit)); else setImmediate(() => void start(r.id, runKey, permit)); return json(res, 202, { id: r.id });
       }
       m = p.match(/^\/api\/runs\/([^/]+)\/cancel$/);

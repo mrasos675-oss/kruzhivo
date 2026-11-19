@@ -52,6 +52,12 @@ export function createPostgresStorage(url) {
       if (!rows.length) throw conflict(ifMatch ? 'BlobPreconditionFailedError' : 'BlobAlreadyExistsError');
       return { etag };
     },
+    async list(prefix) {
+      await ready();
+      const rows = await sql`SELECT path FROM kruzhivo_objects WHERE starts_with(path, ${prefix})
+        AND (expires_at IS NULL OR expires_at > now()) ORDER BY path`;
+      return rows.map(row => row.path);
+    },
     async del(path) {
       await ready();
       await sql`DELETE FROM kruzhivo_objects WHERE path = ${path}`;
