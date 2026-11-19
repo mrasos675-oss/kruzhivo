@@ -137,7 +137,6 @@ function preparePage(docId,versionId,rerun=false) {
  return shell(`<div class="upload-workflow">${head(rerun?'Повторить проверку':'Проверьте документ')}${stepper(2)}<form id="run-form" class="card upload-panel" data-doc="${d.id}" data-version="${v.id}"><div class="document-summary"><h2>${esc(d.name)}</h2><p class="muted">${v.original?'DOCX':'Текст'} · ${v.text.length.toLocaleString('ru-RU')} символов · ${points.length} пунктов${rerun?' · запуск №'+n:''}</p></div><details class="document-preview"><summary>Посмотреть текст документа</summary><div class="structure-list">${points.map(point=>`<p><strong>${esc(point.number)}</strong> ${esc(point.text)}</p>`).join('')}</div><div class="actions">${B('edit-structure','Изменить текст','compact',`data-doc="${d.id}" data-version="${v.id}"`)}</div></details>${isFixture?'<fieldset class="fixture-mode"><legend>Учебный документ</legend><label class="radio"><input type="radio" name="mode" value="demo" checked>Подготовленные ответы без обращения к модели</label><label class="radio"><input type="radio" name="mode" value="api" '+(!state.db.config.configured?'disabled':'')+'>Проверить документ моделью</label></fieldset>':'<input type="hidden" name="mode" value="api">'}${!state.db.config.configured&&!isFixture?'<p class="workflow-unavailable" role="status">Проверка временно недоступна. Администратору нужно подключить модель.</p>':''}<div class="workflow-footer">${d.sample?A('#documents','← Назад','workflow-cancel'):B('edit-structure','← Назад','workflow-cancel',`data-doc="${d.id}" data-version="${v.id}"`)}<button type="submit" class="btn primary" ${!isFixture&&!state.db.config.configured?'disabled':''}>Продолжить →</button></div></form></div>`,rerun?'documents':'upload','Проверка данных');
 }
 
-function resultTabs(r,active){return '<nav class="actions graph-tabs" aria-label="Разделы результатов">'+A('#results/'+r.id,'Замечания',active==='findings'?'primary':'',active==='findings'?'aria-current="page"':'')+A('#graph/'+r.id,'Граф связей',active==='graph'?'primary':'',active==='graph'?'aria-current="page"':'')+'</nav>';}
 function relatedBlock(r,f){
  const rows=relatedProvisions(r.provisionGraph,f.id);
  return '<section class="card related-provisions"><h3>Связанные пункты</h3>'+(!r.provisionGraph?'<p>Граф отсутствует в этом старом запуске.</p>'+A('#graph/'+r.id,'Построить граф связей','compact'):!rows.length?'<p class="muted">Прямые ссылки для этого замечания не найдены. Это не исключает смысловых связей.</p>':rows.map(e=>'<p>'+A('#provision/'+r.id+'/'+e.node.id,'п. '+esc(e.node.number),'compact')+' — '+esc(e.type)+(e.direction==='outgoing'?' (ссылка из рассматриваемого пункта)':'')+': «'+esc(e.node.text)+'»</p>').join(''))+'</section>';
@@ -145,14 +144,57 @@ function relatedBlock(r,f){
 function graphWarning(r,f){
  return relatedProvisions(r.provisionGraph,f.id).some(e=>e.type==='уточняет'&&e.direction==='incoming')?'<div class="notice graph-warning" role="note"><h3>В другом пункте найдено возможное уточнение</h3><p>Прочитайте связанные пункты перед решением: они могут менять оценку замечания. Связь выделена по словам и ссылкам, а не является правовым выводом.</p></div>':'';
 }
-function graphPage(id){
- const x=locate(id);if(!x)return missing();const {r}=x,g=r.provisionGraph;
- if(!g)return shell(head('Граф связей',meta(x))+resultTabs(r,'graph')+notice('В этом запуске граф не сохранялся','Постройте его по сохранённой версии текста и замечаниям. Обращение к API не требуется; решения останутся без изменений.')+B('graph-build','Построить и сохранить граф','primary',`data-run="${r.id}"`),'documents','Граф связей');
- const positions=new Map(g.nodes.map((n,i)=>[n.id,{x:35+(i%4)*190,y:40+Math.floor(i/4)*105}]));
- const height=Math.max(180,Math.ceil(g.nodes.length/4)*105+30);
- const paths=g.edges.map(e=>{const a=positions.get(e.from),b=positions.get(e.to);const path=e.from===e.to?'M '+(a.x+135)+' '+(a.y+17)+' c 55 -45 55 65 0 25':'M '+(a.x+72)+' '+(a.y+44)+' Q '+(a.x+72)+' '+(b.y+75)+' '+(b.x+72)+' '+b.y;return '<path class="graph-edge '+(e.type==='уточняет'?'clarifies':'')+'" d="'+path+'" marker-end="url(#graph-arrow)"><title>'+esc(g.nodes.find(n=>n.id===e.from).number+' → '+g.nodes.find(n=>n.id===e.to).number+': '+e.type)+'</title></path>';}).join('');
- const nodes=g.nodes.map(n=>{const p=positions.get(n.id),findings=r.findings.filter(f=>n.findingIds.includes(f.id)),statuses=[...new Set(findings.map(f=>f.decision.status))],status= !statuses.length?'none':statuses.length===1?statuses[0]:'mixed';return '<a href="#provision/'+r.id+'/'+n.id+'" aria-label="Открыть пункт '+esc(n.number)+'"><g class="graph-node '+status+'" transform="translate('+p.x+','+p.y+')"><rect width="145" height="48" rx="7"/><text x="12" y="20">'+esc('п. '+n.number)+'</text><text class="graph-node-count" x="12" y="37">'+esc(findings.length?findingCount(findings.length):'Без сигналов')+'</text><title>'+esc(n.text)+'</title></g></a>';}).join('');
- return shell(head('Граф связей положений',meta(x))+resultTabs(r,'graph')+'<p class="muted">Сохранённый граф · '+esc(g.version)+'. Стрелка направлена от ссылающегося пункта к адресату. Оранжевая связь — возможное уточнение пункта с сигналом. Кликните пункт, чтобы прочитать его.</p><div class="graph-legend">'+[['pending','Не рассмотрено'],['confirmed','Подтверждено'],['modified','Изменено'],['rejected','Отклонено'],['mixed','Разные решения'],['none','Без сигналов']].map(([c,t])=>'<span class="'+c+'">'+esc(t)+'</span>').join('')+'</div><div class="graph-canvas" tabindex="0" aria-label="Схема связей, прокрутка"><svg xmlns="http://www.w3.org/2000/svg" width="800" height="'+height+'" role="img" aria-label="Граф пунктов документа"><defs><marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#737780"/></marker></defs>'+paths+nodes+'</svg></div><section class="card"><h2>Найденные связи ('+g.edges.length+')</h2>'+(g.edges.map(e=>'<p>'+A('#provision/'+r.id+'/'+e.from,'п. '+esc(g.nodes.find(n=>n.id===e.from).number),'compact')+' → '+A('#provision/'+r.id+'/'+e.to,'п. '+esc(g.nodes.find(n=>n.id===e.to).number),'compact')+' — '+esc(e.type)+'</p>').join('')||'<p>Прямые ссылки не найдены.</p>')+'</section>'+(g.unresolved.length?'<details class="card"><summary>Неразрешённые ссылки ('+g.unresolved.length+')</summary>'+g.unresolved.map(e=>'<p>'+A('#provision/'+r.id+'/'+e.from,'Открыть пункт','compact')+' «'+esc(e.reference)+'»: '+esc(e.reason)+'</p>').join('')+'</details>':'')+'<p class="muted">Детерминированный разбор ссылок не находит все смысловые связи и не заменяет проверку специалиста. Состав графа не меняется при изменении решения; цвет узла отражает сохранённое решение.</p>','documents','Граф связей');
+function graphPage(id) {
+ const x=locate(id);
+ if(!x)return missing();
+ const g=x.r.provisionGraph;
+ const heading=`<a class="check-results-back" href="#results/${id}">← Результаты проверки</a>${head('Граф связей',meta(x))}`;
+ const page=body=>shell(`<div class="check-results provision-graph">${heading}${body}</div>`,'documents','Граф связей',{checksNavigation:false});
+ if(!g)return page(notice('Граф для этого запуска ещё не построен','Постройте его по сохранённому тексту документа.')+B('graph-build','Построить граф','primary',`data-run="${id}"`));
+
+ const nodes=new Map(g.nodes.map(node=>[node.id,node]));
+ const nodeLink=node=>{
+   const title=node.number.endsWith(')')?'Подпункт '+node.number:node.number.startsWith('Абзац ')?node.number:'Пункт '+node.number;
+   const excerpt=node.text.replace(/\s+/gu,' ');
+   return `<a class="provision-node" href="#provision/${id}/${node.id}">
+     <strong>${esc(title)}</strong>
+     ${excerpt?`<small>${esc(excerpt.slice(0,100))}${excerpt.length>100?'…':''}</small>`:''}
+     ${node.findingIds.length?`<span class="status pending">${findingCount(node.findingIds.length)}</span>`:''}
+   </a>`;
+ };
+ const links=g.edges.filter(edge=>edge.from!==edge.to);
+ const selfLinks=g.edges.filter(edge=>edge.from===edge.to);
+ const count=(n,one,few,many)=>n+' '+plural(n,one,few,many);
+ const diagram=links.length?`<section class="card provision-graph-panel" aria-label="Связи между пунктами">
+   <h2>${count(links.length,'связь между пунктами','связи между пунктами','связей между пунктами')}</h2>
+   <p class="muted">Стрелка ведёт от пункта со ссылкой к пункту, на который ссылаются.</p>
+   <ul class="provision-edges">${links.map(edge=>`<li>
+     ${nodeLink(nodes.get(edge.from))}
+     <div class="provision-direction${edge.type==='уточняет'?' clarification':''}">
+       <span aria-hidden="true">→</span>
+       ${edge.type==='уточняет'?'Возможное уточнение':'Ссылается на'}
+     </div>
+     ${nodeLink(nodes.get(edge.to))}
+   </li>`).join('')}</ul>
+ </section>`:`<section class="card provision-graph-panel"><h2>Прямые связи между пунктами не найдены</h2>
+   <p class="muted">${g.unresolved.length?'Ниже перечислены ссылки, которые требуют ручной сверки.':'Система ищет явные ссылки в тексте. Смысловые связи могут потребовать ручной сверки.'}</p>
+ </section>`;
+ const unresolved=g.unresolved.length?`<details class="card provision-graph-details" ${links.length?'':'open'}>
+   <summary>Ссылки для ручной сверки (${g.unresolved.length})</summary>
+   <ul class="provision-reference-list">${g.unresolved.map(item=>`<li>${nodeLink(nodes.get(item.from))}
+     <div><strong>«${esc(item.reference)}»</strong><p class="muted">${esc(item.reason)}</p></div>
+   </li>`).join('')}</ul>
+ </details>`:'';
+ const selfReferences=selfLinks.length?`<details class="card provision-graph-details">
+   <summary>Ссылки на тот же пункт (${selfLinks.length})</summary>
+   <ul class="provision-reference-list">${selfLinks.map(edge=>`<li>${nodeLink(nodes.get(edge.from))}
+     <p class="muted">${esc(edge.references.join(' · '))}</p>
+   </li>`).join('')}</ul>
+ </details>`:'';
+ const allPoints=g.nodes.length?`<details class="card provision-graph-details"><summary>Все пункты документа (${g.nodes.length})</summary>
+   <ul class="provision-node-list">${g.nodes.map(node=>`<li>${nodeLink(node)}</li>`).join('')}</ul>
+ </details>`:'';
+ return page(diagram+unresolved+selfReferences+allPoints);
 }
 function provisionPage(id,nodeId){
  const x=locate(id),n=x?.r.provisionGraph?.nodes.find(n=>n.id===nodeId);if(!n)return missing();

@@ -42,7 +42,7 @@ test('History cards remain in document flow rather than using the sticky decisio
 test('Own-document submission stays API-only and an unavailable connection never falls back to prepared answers',()=>{
  const d={id:'own',name:'Собственный документ',sample:false,versions:[{id:'v1',number:1,text:'1. Текст документа.'}],runs:[]};
  const context={state:{db:{documents:[d],config:{configured:false},profile:{}},runChoices:{docId:'another',versionId:'another',mode:'demo'}},head:()=>'',stepper:()=>'',parseDocumentStructure:()=>[{number:'1',text:'Текст документа.'}],esc:String,A:()=>'',B:()=>'',shell:(html)=>html};
- vm.createContext(context);vm.runInContext(extract('function preparePage','function resultTabs')+extract('function runConfirmation','function modeCaption'),context);
+ vm.createContext(context);vm.runInContext(extract('function preparePage','function relatedBlock')+extract('function runConfirmation','function modeCaption'),context);
  const prepare=vm.runInContext("preparePage('own','v1')",context);assert.match(prepare,/name="mode" value="api"/);assert.ok(!prepare.includes('value="demo"'));assert.ok(!prepare.includes('Учебный'));assert.match(prepare,/type="submit" class="btn primary" disabled/);
  let confirmation=vm.runInContext("runConfirmation('own','v1')",context);assert.match(confirmation,/name="mode" value="api"/);assert.match(confirmation,/type="submit" class="btn primary" disabled/);
  context.state.db.config.configured=true;confirmation=vm.runInContext("runConfirmation('own','v1')",context);assert.ok(!confirmation.includes('type="submit" class="btn primary" disabled'));assert.match(confirmation,/Начать проверку/);
