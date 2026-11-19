@@ -25,24 +25,34 @@ function nodeExcerpt(text, references) {
   return text.trim();
 }
 
-function referenceContext(text, reference, excerpt) {
+function referenceContext(text, reference) {
   if (!reference) return '';
   const at = text.indexOf(reference);
   if (at < 0) return '';
-  const excerptAt = excerpt ? text.indexOf(excerpt) : -1;
-  const excerptEnd = excerptAt + (excerpt?.length || 0);
-  let start = Math.max(0, at - 95);
-  let end = Math.min(text.length, at + reference.length + 130);
-  if (excerptAt >= 0 && excerptEnd <= at) start = Math.max(start,excerptEnd);
-  if (excerptAt >= at+reference.length) end = Math.min(end,excerptAt);
-  return (start ? '… ' : '') + text.slice(start, end).trim() + (end < text.length ? ' …' : '');
+  const start = text.lastIndexOf('\n',at-1)+1;
+  const end = text.indexOf('\n',at+reference.length);
+  return text.slice(start,end<0?text.length:end).trim();
+}
+
+function layoutColumns(columns, nodeHeight = () => cardHeight) {
+  const heights = columns.map(items=>items.reduce((sum,id)=>sum+nodeHeight(id)+rowGap,0)-rowGap);
+  const tallest = Math.max(...heights);
+  const positions = new Map();
+  for (const [column, items] of columns.entries()) {
+    let y = margin+(tallest-heights[column])/2;
+    for (const id of items) {
+      const height = nodeHeight(id);
+      positions.set(id,{x:margin+column*(cardWidth+columnGap),y,height,column});
+      y += height+rowGap;
+    }
+  }
+  return {positions,width:columns.length*(cardWidth+columnGap)-columnGap+margin*2,height:tallest+margin*2};
 }
 
 function placeNodes(links, nodes) {
   const incoming = new Set(links.filter(link => !link.reason).map(link => link.to.id));
   const useMiddle = incoming.size > 0 && links.some(link => link.reason);
   const columns = [[], [], []];
-  const positions = new Map();
   const sources = new Set(links.map(link => link.from.id));
   const unresolved = new Map();
   for (const link of links) {
@@ -59,20 +69,7 @@ function placeNodes(links, nodes) {
   }
   columns[useMiddle ? 2 : 1].push(...unresolved.values());
 
-  const rowHeight = cardHeight + rowGap;
-  const largestColumn = Math.max(...columns.map(column => column.length));
-  const height = largestColumn * rowHeight - rowGap + margin * 2;
-  const visibleColumns = columns.filter(column => column.length);
-  for (const [column, items] of visibleColumns.entries()) {
-    const offset = margin + (largestColumn - items.length) * rowHeight / 2;
-    for (const [row, node] of items.entries()) {
-      positions.set(node.id, {
-        x: margin + column * (cardWidth + columnGap),
-        y: offset + row * rowHeight,
-      });
-    }
-  }
-  return { positions, columns:visibleColumns.length, width: visibleColumns.length * (cardWidth + columnGap) - columnGap + margin * 2, height };
+  return columns.filter(column=>column.length).map(column=>column.map(node=>node.id));
 }
 
 function connector(from, to, fromOffset, toOffset) {
@@ -136,9 +133,8 @@ export function renderProvisionMap(run, { esc, findingCount }) {
     const excerpt = excerpts.get(node.id);
     const prefix = node.text.trimStart().startsWith(excerpt) ? '' : '… ';
     const text = prefix + excerpt.replace(/\s+/gu,' ');
-    const snippet = text.slice(0,164);
     return `<a class="provision-map-node" href="${esc(pointRoute(node))}"><strong>${label}</strong>
-      <span class="provision-map-excerpt">${esc(snippet)}${text.length>snippet.length?'…':''}</span>
+      <span class="provision-map-excerpt">${esc(text)}</span>
       ${node.findingIds.length?`<small class="provision-map-count">${findingCount(node.findingIds.length)}</small>`:''}
     </a>`;
   };
@@ -150,13 +146,15 @@ export function renderProvisionMap(run, { esc, findingCount }) {
   </details>` : '';
   if (!links.length) return '<section class="card provision-map-empty"><h2>Ссылки между пунктами не найдены</h2><p class="muted">Ниже можно открыть текст каждого распознанного пункта.</p></section>'+selfLinks+allPoints;
 
-  const { positions, columns, width, height } = placeNodes(links,[...nodes.values()]);
+  const columns = placeNodes(links,[...nodes.values()]);
+  const { positions,width,height } = layoutColumns(columns);
   const incoming = Map.groupBy(links, link=>link.to.id);
   const offset = (group, link) => cardHeight * (group.indexOf(link)+1) / (group.length+1);
   const edgeName = link => link.reason?'Нужна сверка':link.type==='уточняет'?'Возможное уточнение':'Прямая ссылка';
   const edgeDescription = link => provisionLabel(link.from.number)+' → '+(link.reason?link.references[0]:provisionLabel(link.to.number))+' · '+edgeName(link);
+  const optionTitle = link => link.from.number+' → '+(link.reason?link.references[0]:link.to.number);
   const evidence = link => {
-    const quote = referenceContext(link.from.text, link.references[0] || '',excerpts.get(link.from.id));
+    const quote = referenceContext(link.from.text, link.references[0] || '');
     return `<h2>Основание связи</h2>
       ${quote?`<blockquote>${esc(quote)}</blockquote>`:`<p class="muted">${esc(link.references.join(' · '))}</p>`}
       ${link.reason?`<div class="provision-evidence-question"><h3>Что сверить</h3><p>${esc(link.reason)}. Проверьте, к какому пункту относится ссылка.</p></div>`
@@ -166,7 +164,7 @@ export function renderProvisionMap(run, { esc, findingCount }) {
   };
   const edgeMarkup = links.map((link,index)=>{
     const line=connector(positions.get(link.from.id),positions.get(link.to.id),offset(outgoing.get(link.from.id),link),offset(incoming.get(link.to.id),link));
-    return `<g class="provision-map-edge${link.reason?' unresolved':''}" data-provision-edge="${index}" role="button" tabindex="0" aria-pressed="${index===0}" aria-label="${esc(edgeDescription(link))}">
+    return `<g class="provision-map-edge${link.reason?' unresolved':''}" data-provision-edge="${index}" data-from="${esc(link.from.id)}" data-to="${esc(link.to.id)}" role="button" tabindex="0" aria-pressed="${index===0}" aria-label="${esc(edgeDescription(link))}">
       <path class="provision-edge-hit" d="${line.d}"/>
       <path class="provision-edge-line" d="${line.d}" marker-end="url(#${link.reason?'provision-arrow-unresolved':'provision-arrow'})"/>
       ${!link.reason?`<text class="provision-edge-caption" x="${line.x}" y="${line.y-7}" text-anchor="middle">${link.type==='уточняет'?'Уточнение?':'Ссылается'}</text>`:''}
@@ -176,11 +174,11 @@ export function renderProvisionMap(run, { esc, findingCount }) {
     const p=positions.get(node.id);
     const mark=node.number?pointCard(node):`<div class="provision-map-node unresolved"><strong>${esc(node.title)}</strong><span class="provision-map-excerpt">${esc(node.text)}</span></div>`;
     const selected = [links[0].from.id,links[0].to.id].includes(node.id);
-    return `<foreignObject x="${p.x}" y="${p.y}" width="${cardWidth}" height="${cardHeight}" class="provision-map-object${selected?' linked':''}" data-provision-node="${esc(node.id)}">${mark}</foreignObject>`;
+    return `<foreignObject x="${p.x}" y="${p.y}" width="${cardWidth}" height="${cardHeight}" class="provision-map-object${selected?' linked':''}" data-provision-node="${esc(node.id)}" data-column="${p.column}">${mark}</foreignObject>`;
   }).join('');
   return `<div class="provision-map-layout" data-provision-map>
     <div class="provision-map-scroll" tabindex="0" aria-label="Граф связей, область прокрутки">
-      <svg class="provision-map-canvas" data-columns="${columns}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="group" aria-label="Связи между пунктами документа">
+      <svg class="provision-map-canvas" data-columns="${columns.length}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="group" aria-label="Связи между пунктами документа">
         <defs>
           <marker id="provision-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 Z"/></marker>
           <marker id="provision-arrow-unresolved" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 Z"/></marker>
@@ -190,7 +188,7 @@ export function renderProvisionMap(run, { esc, findingCount }) {
     </div>
     <aside class="card provision-map-inspector" aria-label="Сведения о связи">
       <label class="provision-map-picker"><span>Выбранная связь</span>
-        <select data-provision-select>${links.map((link,index)=>`<option value="${index}">${esc(edgeDescription(link))}</option>`).join('')}</select>
+        <select data-provision-select>${links.map((link,index)=>`<option value="${index}">${esc(optionTitle(link))}</option>`).join('')}</select>
       </label>
       <div class="provision-map-evidence" aria-live="polite">${evidence(links[0])}</div>
       ${links.map((link,index)=>`<template data-provision-evidence="${index}" data-from="${esc(link.from.id)}" data-to="${esc(link.to.id)}">${evidence(link)}</template>`).join('')}
@@ -200,7 +198,48 @@ export function renderProvisionMap(run, { esc, findingCount }) {
   ${selfLinks}${allPoints}`;
 }
 
+function fitProvisionMap(map) {
+  const svg = map.querySelector('.provision-map-canvas');
+  const objects = [...svg.querySelectorAll('[data-provision-node]')];
+  const columns = Array.from({length:Number(svg.dataset.columns)},()=>[]);
+  const nodes = new Map(objects.map(node=>[node.dataset.provisionNode,node]));
+  for (const node of objects) columns[Number(node.dataset.column)].push(node.dataset.provisionNode);
+  const {positions,width,height} = layoutColumns(columns,id=>Math.max(70,nodes.get(id).firstElementChild.offsetHeight));
+  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  svg.setAttribute('height',height);
+  for (const [id,p] of positions) {
+    const node = nodes.get(id);
+    node.setAttribute('x',p.x);
+    node.setAttribute('y',p.y);
+    node.setAttribute('height',p.height);
+  }
+  const edges = [...svg.querySelectorAll('[data-provision-edge]')];
+  const outgoing = Map.groupBy(edges,edge=>edge.dataset.from);
+  const incoming = Map.groupBy(edges,edge=>edge.dataset.to);
+  for (const edge of edges) {
+    const {from,to}=edge.dataset;
+    const start=positions.get(from), end=positions.get(to);
+    const offsets = (group,height) => height*(group.indexOf(edge)+1)/(group.length+1);
+    const line = connector(start,end,offsets(outgoing.get(from),start.height),offsets(incoming.get(to),end.height));
+    for (const path of edge.querySelectorAll('path')) path.setAttribute('d',line.d);
+    const caption=edge.querySelector('text');
+    if(caption){caption.setAttribute('x',line.x);caption.setAttribute('y',line.y-7);}
+  }
+}
+
 export function installProvisionMap(root = document) {
+  let currentMap;
+  const resize = new ResizeObserver(()=>{if(currentMap?.isConnected)fitProvisionMap(currentMap);});
+  const observeMap = () => {
+    const map = root.querySelector('[data-provision-map]');
+    if(map===currentMap)return;
+    resize.disconnect();
+    currentMap=map;
+    if(!map)return;
+    fitProvisionMap(map);
+    for(const node of map.querySelectorAll('.provision-map-object .provision-map-node'))resize.observe(node);
+  };
+  new MutationObserver(observeMap).observe(root.getElementById('app'),{subtree:true,childList:true});
   const selectLink = (map, index) => {
     const template = map.querySelector(`[data-provision-evidence="${Number(index)}"]`);
     if (!template) return;
