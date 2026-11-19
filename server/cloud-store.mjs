@@ -31,7 +31,6 @@ export function createCloudStore(workspace, master, storage = blob, { initialDb 
         // Conditional writes still use the storage ETag read before the snapshot.
         const {etag}=await storage.head(path),state=await requireState(),result=fn(state);
         const serialized = JSON.stringify(state);
-        if (Buffer.byteLength(serialized) > 3 * 1024 * 1024) throw fail('Хранилище демки заполнено. Скачайте отчёты; новые данные не сохранены.', 413);
         try { await storage.put(path, serialized, { ...writeOptions, allowOverwrite: true, ifMatch: etag }); return result; }
         catch (e) { if (!(e instanceof blob.BlobPreconditionFailedError) && e.name !== 'BlobPreconditionFailedError') throw e; }
       }
