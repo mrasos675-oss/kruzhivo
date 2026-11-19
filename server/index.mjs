@@ -57,8 +57,8 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
     return result;
   }
 
-  async function saveHistory(runId, type, data, versionNumber) {
-    try { await history.record(runId, type, data, versionNumber); }
+  async function saveHistory(runId, type, data, version) {
+    try { await history.record(runId, type, data, version); }
     catch { console.error('kruzhivo: could not queue GitHub history event'); }
   }
 
@@ -156,12 +156,12 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
       if(expertMatch){const [,caseId,action,number]=expertMatch;
         if(req.method==='GET'&&!action)return json(res,200,await expertReview.get(caseId));
         if(req.method==='GET'&&number){const c=await expertReview.get(caseId),bytes=expertDocx(c,Number(number));res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','Content-Disposition':'attachment; filename="expert-conclusion-v'+number+'.docx"'});return res.end(bytes);}
-        if(req.method==='POST'||req.method==='PUT'){const b=await jsonBody(req);const result=action==='accept'?await expertReview.accept(caseId,b.token,account?{...b.profile,name:account.displayName,accountId:account.id,username:account.username}:b.profile):action==='invite'?await expertReview.invite(caseId):action==='start'?await expertReview.start(caseId):action==='messages'?await expertReview.message(caseId,b.text):action==='draft'?await expertReview.save(caseId,b.text,b.revision):action==='sign'?await expertReview.sign(caseId,b.revision):action==='new-draft'?await expertReview.newDraft(caseId):null;if(result){
-          if(history&&action==='sign'){
-            const c=await expertReview.get(caseId);
-            const final=c.conclusions.at(-1);
-            await saveHistory(c.run.id,'conclusion',{caseId, conclusion:final},final.number);
-            if(schedule)schedule(publishHistory(c.run.id));else await publishHistory(c.run.id);
+        if(req.method==='POST'||req.method==='PUT'){const b=await jsonBody(req);const result=action==='accept'?await expertReview.accept(caseId,b.token,account?{...b.profile,name:account.displayName,accountId:account.id,username:account.username}:b.profile):action==='invite'?await expertReview.invite(caseId):action==='start'?await expertReview.start(caseId):action==='messages'?await expertReview.message(caseId,b.text):action==='draft'?await expertReview.save(caseId,b.text,b.revision,!!history):action==='sign'?await expertReview.sign(caseId,b.revision,!!history):action==='new-draft'?await expertReview.newDraft(caseId):null;if(result){
+          if(result.history){
+            const {runId, conclusion}=result.history;
+            await saveHistory(runId,action==='sign'?'conclusion':'draft',{caseId, conclusion},conclusion);
+            if(schedule)schedule(publishHistory(runId));else await publishHistory(runId);
+            delete result.history;
           }
           return json(res,200,result);
         }}

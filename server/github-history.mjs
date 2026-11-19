@@ -38,11 +38,12 @@ export function createGithubHistory(token, storage, request = fetch) {
   }
 
   return {
-    async record(runId, type, data, conclusionNumber) {
+    async record(runId, type, data, version) {
       if (!/^[a-f0-9-]{36}$/.test(runId)) throw new Error('Invalid history run identifier');
       const filename = {
         submitted: '01-submission', result: '02-result',
-        conclusion: '03-conclusion-' + Number(conclusionNumber),
+        draft: '03-draft-' + Number(version?.number) + '-' + String(Number(version?.revision)).padStart(6, '0'),
+        conclusion: '03-conclusion-' + Number(version?.number),
       }[type];
       if (!filename) throw new Error('Unknown history event');
       const path = 'reviews/' + runId + '/' + filename + '.json';
