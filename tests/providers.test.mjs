@@ -199,4 +199,7 @@ test('Polza streaming reconstructs split UTF-8 chunks and rejects incomplete res
   };
   assert.deepEqual(await completion('JSON', {}, { connection, key: 'test-key', fetcher: make(first + second + 'data: [DONE]\r\n\r\n') }), { текст: 'да' });
   await assert.rejects(completion('JSON', {}, { connection, key: 'test-key', fetcher: make(first) }), /Ответ модели не завершён/);
+  const serviceData = frames({ choices: [{ delta: { reasoning_content: 'x'.repeat(2048) } }] }).repeat(1100);
+  const oversizedEnvelope = async () => new Response(serviceData + first + second, { headers: { 'Content-Type': 'text/event-stream' } });
+  assert.deepEqual(await completion('JSON', {}, { connection, key: 'test-key', fetcher: oversizedEnvelope }), { текст: 'да' });
 });

@@ -108,7 +108,10 @@ async function responseJson(response) {
 }
 async function streamedCompletion(response) {
   const decoder = new TextDecoder();
-  let size = 0, buffer = '', content = '', finishReason, done = false;
+  // The SSE envelope also carries metadata and reasoning fragments. Count
+  // model text separately so the framing does not consume the result budget.
+  const maxResultBytes = 2 * 1024 * 1024, maxStreamBytes = 32 * 1024 * 1024;
+  let streamBytes = 0, resultBytes = 0, buffer = '', content = '', finishReason, done = false;
   const consume = frame => {
     const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
     if (!data) return;
@@ -116,13 +119,18 @@ async function streamedCompletion(response) {
     const event = JSON.parse(data);
     if (event.error) throw fail('Polza прервал поток ответа.', 502);
     const choice = event.choices?.[0];
-    if (typeof choice?.delta?.content === 'string') content += choice.delta.content;
+    const delta = choice?.delta?.content;
+    if (typeof delta === 'string') {
+      resultBytes += Buffer.byteLength(delta);
+      if (resultBytes > maxResultBytes) throw fail('Текст ответа провайдера слишком большой.', 502);
+      content += delta;
+    }
     if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
   };
   try {
     for await (const chunk of response.body) {
-      size += chunk.length;
-      if (size > 2 * 1024 * 1024) throw fail('Ответ провайдера слишком большой.', 502);
+      streamBytes += chunk.length;
+      if (streamBytes > maxStreamBytes) throw fail('Поток ответа Polza слишком большой.', 502);
       buffer += decoder.decode(chunk, { stream: true });
       const frames = buffer.split(/\r?\n\r?\n/);
       buffer = frames.pop();
