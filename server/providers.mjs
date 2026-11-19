@@ -68,7 +68,7 @@ export function guardedLookup(hostname, options, callback, lookup = dnsLookup) {
   });
 }
 const dispatcher = new Agent({ connect: { lookup: guardedLookup } });
-export function providerRequest(connection, key, system, payload) {
+export function providerRequest(connection, key, system, payload, { stream = false } = {}) {
   const c = normalizeConnection(connection), headers = { 'Content-Type': 'application/json' }, message = JSON.stringify(payload);
   let url, body;
   if (c.protocol === 'anthropic') {
@@ -84,7 +84,7 @@ export function providerRequest(connection, key, system, payload) {
     body = { model: c.model, instructions: system, input: message, store: false, stream: false, ...(c.jsonMode ? { text: { format: { type: 'json_object' } } } : {}) };
   } else {
     url = c.baseUrl + '/chat/completions'; headers.Authorization = `Bearer ${key}`;
-    body = { model: c.model, messages: [{ role: 'system', content: system }, { role: 'user', content: message }], stream: false, ...(c.jsonMode ? { response_format: { type: 'json_object' } } : {}) };
+    body = { model: c.model, messages: [{ role: 'system', content: system }, { role: 'user', content: message }], stream: c.provider === 'polza' && stream, ...(c.jsonMode ? { response_format: { type: 'json_object' } } : {}) };
     // Provider-specific parameters must never spill into other compatible APIs.
     if (c.provider === 'deepseek') body.thinking = { type: 'disabled' };
   }
@@ -106,6 +106,39 @@ async function responseJson(response) {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch (e) { if (e.status) throw e; throw fail('Провайдер вернул некорректный ответ. Проверьте адрес и формат API.', 502); }
 }
+async function streamedCompletion(response) {
+  const decoder = new TextDecoder();
+  let size = 0, buffer = '', content = '', finishReason, done = false;
+  const consume = frame => {
+    const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
+    if (!data) return;
+    if (data === '[DONE]') { done = true; return; }
+    const event = JSON.parse(data);
+    if (event.error) throw fail('Polza прервал поток ответа.', 502);
+    const choice = event.choices?.[0];
+    if (typeof choice?.delta?.content === 'string') content += choice.delta.content;
+    if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
+  };
+  try {
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > 2 * 1024 * 1024) throw fail('Ответ провайдера слишком большой.', 502);
+      buffer += decoder.decode(chunk, { stream: true });
+      const frames = buffer.split(/\r?\n\r?\n/);
+      buffer = frames.pop();
+      for (const frame of frames) {
+        consume(frame);
+        if (done) return { content, finishReason };
+      }
+    }
+    consume(buffer + decoder.decode());
+    return { content, finishReason };
+  } catch (error) {
+    if (error.status) throw error;
+    throw fail('Поток ответа Polza не удалось прочитать до конца.', 502);
+  }
+}
+
 const networkCodes = new Set([
   'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENETUNREACH',
   'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET',
@@ -119,8 +152,8 @@ function networkCode(error, signal) {
   return [cause?.code, cause?.message, error?.code].find(code => networkCodes.has(code)) || 'NETWORK_ERROR';
 }
 
-export async function requestProvider(connection, key, system, payload, { fetcher, signal, onAttempt } = {}) {
-  const c = normalizeConnection(connection), request = providerRequest(c, key, system, payload);
+export async function requestProvider(connection, key, system, payload, { fetcher, signal, onAttempt, stream = false } = {}) {
+  const c = normalizeConnection(connection), request = providerRequest(c, key, system, payload, { stream });
   const options = { method: 'POST', redirect: 'manual', dispatcher, signal, headers: request.headers, body: JSON.stringify(request.body) };
   const send = async () => {
     signal?.throwIfAborted();
@@ -151,6 +184,9 @@ export async function requestProvider(connection, key, system, payload, { fetche
     // Do not follow redirects or expose error bodies: they may echo a credential.
     await response.body?.cancel();
     throw fail(response.status >= 300 && response.status < 400 ? 'API вернул перенаправление. Укажите конечный адрес сервиса.' : errors[response.status] || 'API временно недоступен. Предыдущие результаты сохранены.', 502);
+  }
+  if (request.body.stream && response.headers.get('content-type')?.includes('text/event-stream')) {
+    return { ...await streamedCompletion(response), connection: c };
   }
   const data = await responseJson(response);
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw fail('Провайдер вернул некорректную структуру ответа.', 502);

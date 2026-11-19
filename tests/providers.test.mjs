@@ -182,3 +182,21 @@ test('Polza retries temporary failures once and leaves permanent responses alone
   } }), /отклонил ключ/);
   assert.equal(calls, 1);
 });
+
+
+test('Polza streaming reconstructs split UTF-8 chunks and rejects incomplete responses', async () => {
+  const connection = { provider: 'polza', model: 'deepseek/test' };
+  const frames = text => 'data: ' + JSON.stringify(text) + '\r\n\r\n';
+  const first = frames({ choices: [{ delta: { content: '{"текст":' } }] });
+  const second = frames({ choices: [{ delta: { content: '"да"}' }, finish_reason: 'stop' }] });
+  const make = text => async (_url, options) => {
+    assert.equal(JSON.parse(options.body).stream, true);
+    const bytes = new TextEncoder().encode(text);
+    return new Response(new ReadableStream({ start(controller) {
+      for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
+      controller.close();
+    } }), { headers: { 'Content-Type': 'text/event-stream' } });
+  };
+  assert.deepEqual(await completion('JSON', {}, { connection, key: 'test-key', fetcher: make(first + second + 'data: [DONE]\r\n\r\n') }), { текст: 'да' });
+  await assert.rejects(completion('JSON', {}, { connection, key: 'test-key', fetcher: make(first) }), /Ответ модели не завершён/);
+});

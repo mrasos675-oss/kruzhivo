@@ -118,7 +118,7 @@ export function validateEdits(raw, eligible) {
 
 export async function completion(system, payload, options) {
   const connection = normalizeConnection(options.connection || legacyConnection(options.model));
-  const { content, finishReason } = await requestProvider(connection, options.key, system, payload, { fetcher: options.fetcher, signal: AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(connection.provider === 'polza' ? 165000 : 120000)]) });
+  const { content, finishReason } = await requestProvider(connection, options.key, system, payload, { fetcher: options.fetcher, stream: connection.provider === 'polza', onAttempt: options.onAttempt, signal: AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(connection.provider === 'polza' ? 165000 : 120000)]) });
   if (typeof content === 'string' && options.key && content.includes(options.key)) throw fail('Ответ провайдера содержит недопустимые данные и не сохранён.', 502);
   if (options.onResponse && typeof content === 'string') await options.onResponse({ model: connection.model, provider: connection.provider, protocol: connection.protocol, requestHash: createHash('sha256').update(JSON.stringify({ system, payload, connection })).digest('hex'), response: content, finishReason, at: new Date().toISOString() });
   if (finishReason !== 'stop') throw fail('Ответ модели не завершён. Данные не приняты.', 502);
@@ -136,7 +136,7 @@ export async function pipeline(run, text, options, update) {
     run.aiInputs = [];
     run.aiTrace = [];
   }
-  const requestOptions = stage => ({ ...options, onResponse: async response => {
+  const requestOptions = stage => ({ ...options, onAttempt: attempt => options.onAttempt?.(stage, attempt), onResponse: async response => {
     run.aiTrace.push({ stage, promptVersion: run.aiPolicy.version, ...response });
     await update(stage, 'running', { aiTrace: run.aiTrace });
   } });

@@ -96,7 +96,12 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
     const update = async (stage, status, patch = {}) => { if (r.mode === 'api' && status === 'running' && (key !== apiKey || !sameDestination(r.connection || connection, connection) || credentials && !(await credentials.valid()))) throw fail('Подключение отключено или заменено. Проверьте настройки API.', 401); return store.change(db => { const current = locate(db, runId).r; if (current.status !== 'running') throw fail('Запуск остановлен.', 409); Object.assign(current, patch); current.stages[stage] = status; current.stageTimes ||= {}; current.stageTimes[stage] ||= {}; if (status === 'running') current.stageTimes[stage].startedAt ||= now(); else current.stageTimes[stage].finishedAt = now(); }); };
     try {
       const signal = hosted ? AbortSignal.any([controller.signal, AbortSignal.timeout(280000)]) : controller.signal;
-      await pipeline(r, v.text, { key, model: selectedModel, connection: r.connection || connection, signal, fetcher }, update);
+      await pipeline(r, v.text, {
+        key, model: selectedModel, connection: r.connection || connection, signal, fetcher,
+        onAttempt: hosted ? (stage, attempt) => {
+          if (attempt.code || attempt.httpStatus >= 400) console.warn('kruzhivo: provider attempt failed', { runId, stage, ...attempt });
+        } : undefined
+      }, update);
       const completed = await store.change(db => {
         const { d, r: current, v } = locate(db, runId);
         if (current.status !== 'running') return null;
