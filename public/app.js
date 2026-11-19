@@ -209,6 +209,7 @@ function resultsPage(id) {
      <p class="muted">Предварительный анализ. Окончательное решение выносит эксперт.</p>
      <div class="actions check-results-actions">
        ${A('#report/'+r.id,'Открыть отчёт ИИ','primary')}
+       ${A('#graph/'+r.id,'Граф связей')}
        ${total?A('#run/'+r.id+'/'+Math.max(0,nextPendingIndex(r)),archived?'Посмотреть замечания':'Рассмотреть замечания'):''}
        ${r.status==='completed'?expertRequestAction(r,expertCase):''}
      </div>
@@ -222,7 +223,6 @@ function resultsPage(id) {
      ${rows?`<ol class="check-results-list">${rows}</ol>`:`<p class="check-results-empty muted">${total?'Нет замечаний с выбранным статусом.':'Сводка по факторам и ограничения доступны в отчёте ИИ.'}</p>`}
    </section>
    <details class="check-results-details"><summary>Материалы проверки</summary><div class="actions">
-     ${A('#graph/'+r.id,'Граф связей','compact')}
      ${A('#history/'+d.id,'История документа','compact')}
      ${A('#sources/'+r.id,'Источники проверки','compact')}
      ${A('#run-details/'+r.id,'Состав запуска','compact')}
