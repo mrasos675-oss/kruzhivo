@@ -12,6 +12,8 @@ function str(x, max = 5000) { if (typeof x !== 'string' || !x.trim() || x.length
 function list(x, max = 30) { if (!Array.isArray(x) || x.length > max) throw fail('Модель вернула некорректный список.', 502); return x; }
 const strings = x => list(x, 20).map(s => str(s));
 const normalizeWhitespace = text => text.replace(/\s+/gu, ' ');
+const optionalText = (value, max) => typeof value === 'string' && value.trim() && value.length <= max ? value.trim() : '';
+const documentStatuses = ['confirmed', 'partial', 'refuted', 'unclear'];
 const unverifiedReviewEvidence = 'Цитата Проверяющего не совпала с текстом документа. Замечание требует ручной сверки.';
 export const decision = () => ({ status: 'pending', explanation: '', proposal: '', basis: '', comment: '', revision: 0, savedAt: null });
 
@@ -71,8 +73,22 @@ export function validateReviews(raw, findings, text, sources = []) {
       if (!src || !src.active || !src.verified || !src.text.includes(str(b.quote))) throw fail('Источник возражения Проверяющего не подтверждён.', 502);
       return { sourceId: src.id, locator: str(b.locator, 500), quote: str(b.quote) };
     });
-    const finding = findings.find(f => f.id === r.findingId), missing = r.verdict === 'supported' && !finding.basis.length;
-    return { findingId: r.findingId, verdict: missing ? 'insufficient' : r.verdict, explanation: str(r.explanation) + (missing ? ' Правовое основание отсутствует: результат ограничен недостатком данных.' : ''), counterarguments: strings(r.counterarguments), evidence, sourceEvidence, checks, doubts: [...strings(r.doubts), ...(missing ? ['Нормативное основание не предоставлено; допустимо лишь уточнить формулировку с сохранением смысла.'] : [])] };
+    const finding = findings.find(f => f.id === r.findingId);
+    const assessment = r.documentAssessment;
+    const summary = optionalText(assessment?.summary, 2000);
+    const documentAssessment = summary && documentStatuses.includes(assessment.status) &&
+      (assessment.status === 'unclear' || verifiedEvidence.length) ? { status: assessment.status, summary } : null;
+    const missing = r.verdict === 'supported' && !finding.basis.length;
+    const narrowed = documentAssessment?.status === 'partial';
+    const refuted = documentAssessment?.status === 'refuted';
+    const verdict = refuted ? 'contested' : missing || (narrowed && r.verdict === 'supported') ? 'insufficient' : r.verdict;
+    return {
+      findingId: r.findingId, verdict,
+      ...(documentAssessment ? { documentAssessment } : {}),
+      explanation: str(r.explanation) + (missing ? ' Правовое основание отсутствует: результат ограничен недостатком данных.' : ''),
+      counterarguments: strings(r.counterarguments), evidence, sourceEvidence, checks,
+      doubts: [...strings(r.doubts), ...(missing ? ['Нормативное основание не предоставлено; допустимо лишь уточнить формулировку с сохранением смысла.'] : [])]
+    };
   });
 }
 
@@ -95,7 +111,8 @@ export function validateEdits(raw, eligible) {
     const blocked = insufficient && draft && meaning !== 'preserved';
     const proposal = blocked ? '' : draft;
     const explanation = str(e.explanation) + (blocked ? ' Проект правки скрыт: данных недостаточно, а сохранение смысла не подтверждено.' : '');
-    return { findingId: e.findingId, status: proposal ? 'prepared' : 'skipped', explanation, proposal, ...(proposal && insufficient ? { requiresLegalReview: true } : {}), ...(!proposal ? { reason: explanation } : {}), meaning, meaningExplanation: str(e.meaningExplanation) + (meaning !== e.meaning ? ' Итог скорректирован по отдельным проверкам смысла: сохранение всех элементов не подтверждено.' : ''), meaningChecks };
+    const nextStep = optionalText(e.nextStep, 1500);
+    return { findingId: e.findingId, status: proposal ? 'prepared' : 'skipped', explanation, proposal, ...(nextStep ? { nextStep } : {}), ...(proposal && insufficient ? { requiresLegalReview: true } : {}), ...(!proposal ? { reason: explanation } : {}), meaning, meaningExplanation: str(e.meaningExplanation) + (meaning !== e.meaning ? ' Итог скорректирован по отдельным проверкам смысла: сохранение всех элементов не подтверждено.' : ''), meaningChecks };
   });
 }
 

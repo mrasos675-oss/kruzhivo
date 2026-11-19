@@ -7,3 +7,23 @@ export const findingNumber=(run,finding)=>run.findings.findIndex(f=>f.id===findi
 export const missingBasisCount=run=>run.findings.filter(f=>f.decision?.status!=='rejected'&&!f.decision?.basis?.trim()&&!f.basis?.length).length;
 export const nextPendingIndex=(run,current=-1)=>{for(let n=1;n<=run.findings.length;n++){const i=(current+n)%run.findings.length;if(run.findings[i].decision.status==='pending')return i;}return -1;};
 export function findingLimitation(finding){return [...new Set([...(finding.review?.doubts||[]),...(finding.basis?.length?[]:['Проверенное нормативное основание не приложено. Ссылка на фактор Методики является классификацией, а не доказательством нарушения.'])])].join(' ')||'Вывод предварительный. Проверить применимость норм, исключения и связанные положения документа.';}
+
+const documentAssessmentLabels = {
+  confirmed: 'Подтверждается текстом',
+  partial: 'Подтверждается частично',
+  refuted: 'Опровергается текстом',
+  unclear: 'По тексту недостаточно данных'
+};
+
+export function documentAssessmentLabel(finding) {
+  return documentAssessmentLabels[finding.review?.documentAssessment?.status] || '';
+}
+
+export function findingReviewSummary(finding) {
+  const label = documentAssessmentLabel(finding);
+  return [
+    ...(label ? [[label, finding.review.documentAssessment.summary]] : []),
+    ...(finding.review ? [[label ? 'Правовая оценка' : 'Итог перепроверки', ruStatus(finding.review.verdict)]] : []),
+    ...(finding.editor?.nextStep ? [['Что сделать дальше', finding.editor.nextStep]] : [])
+  ];
+}

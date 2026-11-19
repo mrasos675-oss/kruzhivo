@@ -1,4 +1,4 @@
-import { findingLimitation, methodReference, missingBasisCount, moscowTime, ruStatus } from './report-format.mjs';
+import { findingLimitation, methodReference, missingBasisCount, moscowTime, ruStatus, findingReviewSummary } from './report-format.mjs';
 
 export const reportDisclaimer = 'Предварительный отчёт системы. Не является заключением антикоррупционной экспертизы';
 const decisionStates = [['confirmed', 'Подтверждено'], ['modified', 'Изменено'], ['rejected', 'Отклонено'], ['pending', 'Не рассмотрено']];
@@ -58,7 +58,12 @@ function remarkCard({ finding, number, factor, reference }, sources, catalog, pr
       <span class="report-chip">${esc(reference)}</span>
     </header>
     ${quoteBlock(finding.quote || 'Цитата не записана', print)}
-    <div class="report-analyst"><h4>Анализ системы</h4><p>${esc(finding.explanation || 'Не записано')}</p></div>
+    ${findingReviewSummary(finding).map(([label, value]) => line(esc(label), value)).join('')}
+    ${finding.review?.documentAssessment
+      ? print
+        ? `<div class="report-analyst">${line('Исходное замечание Аналитика', finding.explanation)}${(finding.review.evidence || []).map(value => line('Контекст', `«${value}»`)).join('')}</div>`
+        : `<details class="report-analyst"><summary>Исходное замечание и цитаты перепроверки</summary><p>${esc(finding.explanation)}</p>${(finding.review.evidence || []).map(value => line('Контекст', `«${value}»`)).join('')}</details>`
+      : `<div class="report-analyst"><h4>Анализ системы</h4><p>${esc(finding.explanation || 'Не записано')}</p></div>`}
     ${basis.length ? `<div class="report-bases"><h4>Основания</h4><ul>${basis.map(entry => `<li>${esc(sourceDescription(entry, sources))}</li>`).join('')}</ul></div>`
       : `<p>${badge('pending', 'Основания не заполнены — требуют проверки')}</p>`}
     <p class="report-small">${esc(findingLimitation(finding))}</p>

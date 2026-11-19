@@ -27,6 +27,21 @@ test('A supported claim without a legal basis is downgraded while objections are
   assert.equal(r.verdict, 'insufficient'); assert.ok(r.doubts.length);
   assert.equal(validateReviews([review(f, { verdict: 'contested', evidence: ['не может превышать 10 рабочих дней'] })], [f], SAMPLE_TEXT)[0].verdict, 'contested');
 });
+test('Document findings survive missing legal sources and a partial objection narrows the finding', () => {
+  const finding = { id: 'f', basis: [] };
+  const text = 'После заключения договора цена может увеличиваться с учётом инфляции. Цена договора фиксирована.';
+  const evidence = ['цена может увеличиваться с учётом инфляции', 'Цена договора фиксирована.'];
+  const assessment = { status: 'confirmed', summary: 'В документе расходятся условия изменения цены.' };
+  const check = patch => validateReviews([review(finding, patch)], [finding], text)[0];
+  const verified = check({ documentAssessment: assessment, evidence });
+  assert.equal(verified.verdict, 'insufficient');
+  assert.deepEqual(verified.documentAssessment, assessment);
+  assert.equal(check({ documentAssessment: assessment }).documentAssessment, undefined);
+  assert.equal(check({ documentAssessment: assessment, evidence: ['Выдуманный фрагмент'] }).documentAssessment, undefined);
+  const partial = { status: 'partial', summary: 'Договор устанавливает цену; порядок её пересмотра требует уточнения.' };
+  assert.deepEqual(check({ documentAssessment: partial, evidence }).documentAssessment, partial);
+  assert.equal(check({ documentAssessment: { ...assessment, status: 'refuted' }, evidence }).verdict, 'contested');
+});
 test('Reviewer cannot fabricate a quote from the document or cite an unavailable source', () => {
   const f = { id: 'f', basis: [{ sourceId: 's' }] };
   const fragment = 'Проверка занимает\n\t10\u00a0рабочих дней.';
@@ -52,8 +67,9 @@ test('Editor cannot claim preserved meaning with absent, uncertain or changed di
   m.rights.status = 'uncertain'; assert.equal(validateEdits([edit({ meaningChecks: m })], eligible)[0].meaning, 'uncertain');
 });
 test('Editor may decline to invent a correction and leave an explanation for the specialist', () => {
-  const r = validateEdits([edit({ proposal: null, explanation: 'Для конкретной редакции не хватает применимой нормы.', meaning: 'uncertain' })], [{ id: 'f' }])[0];
+  const r = validateEdits([edit({ proposal: null, nextStep: 'Сверить порядок утверждения тарифа.', explanation: 'Для конкретной редакции не хватает применимой нормы.', meaning: 'uncertain' })], [{ id: 'f' }])[0];
   assert.equal(r.status, 'skipped'); assert.equal(r.proposal, ''); assert.match(r.reason, /не хватает/);
+  assert.equal(r.nextStep, 'Сверить порядок утверждения тарифа.');
   const unverified = [{ id: 'f', review: { verdict: 'insufficient' } }];
   const tentative = validateEdits([edit({ meaningChecks: matrix() })], unverified)[0];
   assert.equal(tentative.status, 'prepared');

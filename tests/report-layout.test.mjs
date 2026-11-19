@@ -17,6 +17,8 @@ test('The report preserves source content, labels missing data and links 12 fact
 
   doc.name = '</style><script>alert(1)</script>';
   const finding = run.findings[0];
+  finding.review.documentAssessment = { status: 'partial', summary: 'В договоре указан срок. Порядок подачи заявки требует уточнения.' };
+  finding.editor.nextStep = 'Согласовать порядок подачи заявки.';
   finding.quote = '- Оригинальная цитата\n- <текст> без изменений';
   finding.decision = { ...finding.decision, status: 'modified', proposal: 'Редакция для публикации.' };
   const html = renderReport(doc, version, run, { fullName: 'Тестовый специалист' }, CATALOG);
@@ -26,6 +28,10 @@ test('The report preserves source content, labels missing data and links 12 fact
   assert.match(html, /href="#report-remark-1"/);
   assert.match(html, /Редакция для публикации\./);
   assert.match(html, /Тестовый специалист/);
+  assert.match(html, /Подтверждается частично/);
+  assert.match(html, /Правовая оценка/);
+  assert.match(html, /Что сделать дальше/);
+  assert.match(html, /Согласовать порядок подачи заявки/);
   assert.match(html, /data-report-copy="[a-f0-9]{64}"/);
 });
 
