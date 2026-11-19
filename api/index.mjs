@@ -1,3 +1,4 @@
+import { createPostgresStorage } from '../server/postgres-store.mjs';
 import { demoProfileFor } from '../server/profile.mjs';
 import { waitUntil } from '@vercel/functions';
 import { createAccountAuth, roleAllowed, parseAccounts } from '../server/account-auth.mjs';
@@ -108,4 +109,5 @@ return async function handler(req, res) {
 }
 
 }
-export default createHostedHandler({pilotMode:true});
+const databaseUrl = process.env.DATABASE_URL;
+export default createHostedHandler({pilotMode:true, storage:databaseUrl ? createPostgresStorage(databaseUrl) : undefined});

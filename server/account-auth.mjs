@@ -28,7 +28,7 @@ export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=fals
   for(let i=0;i<5;i++){
    const existing=await read(p),meta=existing?await storage.head(p):null,fresh=meta?await read(p):null;
    const times=(fresh?.times||[]).filter(t=>Date.now()-t<900000);if(times.length>=10)throw fail('Слишком много попыток входа. Повторите через 15 минут.',429);times.push(Date.now());
-   try{await storage.put(p,JSON.stringify({times}),{...writeOptions,ttlDays:1,allowOverwrite:!!meta,...(meta?{ifMatch:meta.etag}:{})});return;}catch(e){if(e.name!=='BlobPreconditionFailedError')throw e;}
+   try{await storage.put(p,JSON.stringify({times}),{...writeOptions,ttlDays:1,allowOverwrite:!!meta,...(meta?{ifMatch:meta.etag}:{})});return;}catch(e){if(!['BlobPreconditionFailedError','BlobAlreadyExistsError'].includes(e.name))throw e;}
   }
   throw fail('Повторите вход через несколько секунд.',429);
  }
@@ -52,7 +52,7 @@ export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=fals
     const existing=meta?await read(registryPath):null,list=parseAccounts(existing?.accounts||[]);
     if([...rows,...list].some(x=>x.username===username))throw fail('Этот логин недоступен. Выберите другой.',409);
     if(list.length>=100)throw fail('Регистрация временно приостановлена: достигнут лимит демоверсии.',503);
-    try{await storage.put(registryPath,JSON.stringify({accounts:[...list,a]}),{...writeOptions,allowOverwrite:!!meta,...(meta?{ifMatch:meta.etag}:{})});return publicAccount(a);}catch(e){if(e.name!=='BlobPreconditionFailedError')throw e;}
+    try{await storage.put(registryPath,JSON.stringify({accounts:[...list,a]}),{...writeOptions,allowOverwrite:!!meta,...(meta?{ifMatch:meta.etag}:{})});return publicAccount(a);}catch(e){if(!['BlobPreconditionFailedError','BlobAlreadyExistsError'].includes(e.name))throw e;}
    }
    throw fail('Повторите регистрацию через несколько секунд.',409);
   },
