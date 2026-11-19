@@ -1,3 +1,4 @@
+import { renderProvisionMap, installProvisionMap } from '/provision-map.js';
 import { documentKinds } from '/document-kinds.js';
 import {legalBaseContent,installLegalLibrary} from '/legal-base.js';
 import {installExpertEditor,readExpertDecisions} from '/expert-editor.js';
@@ -152,49 +153,7 @@ function graphPage(id) {
  const page=body=>shell(`<div class="check-results provision-graph">${heading}${body}</div>`,'documents','Граф связей',{checksNavigation:false});
  if(!g)return page(notice('Граф для этого запуска ещё не построен','Постройте его по сохранённому тексту документа.')+B('graph-build','Построить граф','primary',`data-run="${id}"`));
 
- const nodes=new Map(g.nodes.map(node=>[node.id,node]));
- const nodeLink=node=>{
-   const title=node.number.endsWith(')')?'Подпункт '+node.number:node.number.startsWith('Абзац ')?node.number:'Пункт '+node.number;
-   const excerpt=node.text.replace(/\s+/gu,' ');
-   return `<a class="provision-node" href="#provision/${id}/${node.id}">
-     <strong>${esc(title)}</strong>
-     ${excerpt?`<small>${esc(excerpt.slice(0,100))}${excerpt.length>100?'…':''}</small>`:''}
-     ${node.findingIds.length?`<span class="status pending">${findingCount(node.findingIds.length)}</span>`:''}
-   </a>`;
- };
- const links=g.edges.filter(edge=>edge.from!==edge.to);
- const selfLinks=g.edges.filter(edge=>edge.from===edge.to);
- const count=(n,one,few,many)=>n+' '+plural(n,one,few,many);
- const diagram=links.length?`<section class="card provision-graph-panel" aria-label="Связи между пунктами">
-   <h2>${count(links.length,'связь между пунктами','связи между пунктами','связей между пунктами')}</h2>
-   <p class="muted">Стрелка ведёт от пункта со ссылкой к пункту, на который ссылаются.</p>
-   <ul class="provision-edges">${links.map(edge=>`<li>
-     ${nodeLink(nodes.get(edge.from))}
-     <div class="provision-direction${edge.type==='уточняет'?' clarification':''}">
-       <span aria-hidden="true">→</span>
-       ${edge.type==='уточняет'?'Возможное уточнение':'Ссылается на'}
-     </div>
-     ${nodeLink(nodes.get(edge.to))}
-   </li>`).join('')}</ul>
- </section>`:`<section class="card provision-graph-panel"><h2>Прямые связи между пунктами не найдены</h2>
-   <p class="muted">${g.unresolved.length?'Ниже перечислены ссылки, которые требуют ручной сверки.':'Система ищет явные ссылки в тексте. Смысловые связи могут потребовать ручной сверки.'}</p>
- </section>`;
- const unresolved=g.unresolved.length?`<details class="card provision-graph-details" ${links.length?'':'open'}>
-   <summary>Ссылки для ручной сверки (${g.unresolved.length})</summary>
-   <ul class="provision-reference-list">${g.unresolved.map(item=>`<li>${nodeLink(nodes.get(item.from))}
-     <div><strong>«${esc(item.reference)}»</strong><p class="muted">${esc(item.reason)}</p></div>
-   </li>`).join('')}</ul>
- </details>`:'';
- const selfReferences=selfLinks.length?`<details class="card provision-graph-details">
-   <summary>Ссылки на тот же пункт (${selfLinks.length})</summary>
-   <ul class="provision-reference-list">${selfLinks.map(edge=>`<li>${nodeLink(nodes.get(edge.from))}
-     <p class="muted">${esc(edge.references.join(' · '))}</p>
-   </li>`).join('')}</ul>
- </details>`:'';
- const allPoints=g.nodes.length?`<details class="card provision-graph-details"><summary>Все пункты документа (${g.nodes.length})</summary>
-   <ul class="provision-node-list">${g.nodes.map(node=>`<li>${nodeLink(node)}</li>`).join('')}</ul>
- </details>`:'';
- return page(diagram+unresolved+selfReferences+allPoints);
+ return page(renderProvisionMap(x.r,{esc,findingCount}));
 }
 function provisionPage(id,nodeId){
  const x=locate(id),n=x?.r.provisionGraph?.nodes.find(n=>n.id===nodeId);if(!n)return missing();
@@ -600,7 +559,7 @@ document.addEventListener('submit',event=>{const form=event.target;if(!form.id.e
  if(form.id==='example-form'){await api('examples/'+form.dataset.example,{explanation:values.explanation,applicability:values.applicability,sourceIds:new FormData(form).getAll('sourceIds'),verified:values.verified==='on'},'PATCH');await refresh();go('example/'+form.dataset.example);}
  if(form.id==='save-example-form'){const e=await api('examples',{runId:form.dataset.run,findingId:form.dataset.finding,revision:Number(form.dataset.revision),applicability:values.applicability});await refresh();go('example-saved/'+e.id);}
  },event.submitter);});
-installAccessibility();installLegalLibrary();canonicalize();
+installAccessibility();installLegalLibrary();installProvisionMap();canonicalize();
 installExpertEditor({getCase:()=>state.expertCase,onTab:(caseId,tab)=>{state.expertTab={caseId,tab};fitFields();},save:async(id,text,revision)=>{if(state.busy)throw Error('Дождитесь завершения текущего действия.');state.busy=true;try{await api('expert-cases/'+id+'/draft',{text,revision},'PUT');return {revision:revision+1};}finally{state.busy=false;}},onDirty:()=>{state.dirty=true;},onSaved:(id,text,result,form)=>{if(state.expertCase?.id===id){const draft=state.expertCase.conclusions.at(-1);draft.text=text;draft.revision=result.revision;}if(form?.isConnected&&form.elements.text.value===text)clearDraft();}});
 new MutationObserver(()=>upgradeLinks(document.getElementById('app'))).observe(document.getElementById('app'),{childList:true,subtree:true});
 try{
