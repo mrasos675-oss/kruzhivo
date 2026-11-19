@@ -23,7 +23,10 @@ test('DOCX rejects malformed, external chunks and oversize content without trunc
 });
 test('Analyst rejects fabricated document and source quotations and incomplete coverage',()=>{
  const a=demoAnalysis(SAMPLE_TEXT);assert.equal(validateAnalysis(a,SAMPLE_TEXT,[]).coverage.length,12);
- assert.throws(()=>validateAnalysis({...a,findings:[{...a.findings[0],quote:'Выдуманная цитата'}]},SAMPLE_TEXT,[]),/Цитата/);
+ const partial=validateAnalysis({...a,findings:a.findings.map((finding,i)=>i===0?{...finding,quote:'Выдуманная цитата'}:finding)},SAMPLE_TEXT,[]);
+ assert.equal(partial.findings.length,a.findings.length-1);
+ assert.ok(partial.findings.every(f=>SAMPLE_TEXT.includes(f.quote)));
+ assert.match(partial.limitations.join(' '),/ручной сверки/);
  assert.throws(()=>validateAnalysis({...a,coverage:a.coverage.slice(1)},SAMPLE_TEXT,[]),/12 факторов/);
  assert.throws(()=>validateAnalysis({...a,findings:[{...a.findings[0],basis:[{sourceId:'fake',quote:'x',locator:'1'}]}]},SAMPLE_TEXT,[]),/Основание/);
 });

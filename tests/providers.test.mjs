@@ -159,3 +159,26 @@ test('Changing a destination during an analysis cannot forward its old or new ke
   assert.equal(app.store.read().documents.find(d => d.id === doc.id).runs.find(r => r.id === runId).status, 'failed');
   assert.equal(calls, 1);
 });
+
+test('Polza retries temporary failures once and leaves permanent responses alone', async () => {
+  const connection = { provider: 'polza', model: 'deepseek/test' };
+  const run = async first => {
+    let attempts = 0;
+    const answer = await requestProvider(connection, 'test-key', 'system', {}, { fetcher: async () => {
+      if (++attempts === 1) return first();
+      return Response.json({ choices: [{ message: { content: '{}' }, finish_reason: 'stop' }] });
+    } });
+    assert.equal(answer.content, '{}');
+    assert.equal(attempts, 2);
+  };
+  await Promise.all([
+    run(() => { throw new TypeError('connection reset'); }),
+    run(() => new Response('', { status: 503 })),
+  ]);
+  let calls = 0;
+  await assert.rejects(requestProvider(connection, 'test-key', 'system', {}, { fetcher: async () => {
+    calls++;
+    return new Response('', { status: 401 });
+  } }), /отклонил ключ/);
+  assert.equal(calls, 1);
+});

@@ -18,16 +18,21 @@ export const decision = () => ({ status: 'pending', explanation: '', proposal: '
 export function validateAnalysis(raw, text, sources) {
   if (!object(raw)) throw fail('Некорректный результат Аналитика.', 502);
   const allowed = new Set(CATALOG.factors.map(f => f.id));
-  const findings = list(raw.findings).map(f => {
+  const rejectedFactors = new Set();
+  const findings = list(raw.findings).flatMap(f => {
     if (!object(f) || !allowed.has(f.factorId)) throw fail('Неизвестный фактор в ответе модели.', 502);
-    const quote = str(f.quote, 10000);
-    if (!text.includes(quote)) throw fail('Цитата модели не найдена в исходном документе. Результат не принят.', 502);
+    const suppliedQuote = str(f.quote, 10000);
+    const quote = text.includes(suppliedQuote) ? suppliedQuote : text.match(new RegExp(suppliedQuote.split(/\s+/u).map(part => part.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'u'))?.[0];
+    if (!quote) {
+      rejectedFactors.add(f.factorId);
+      return [];
+    }
     const basis = list(f.basis || [], 10).map(b => {
       const src = sources.find(s => s.id === b.sourceId);
       if (!src || !src.active || !src.verified || !src.text.includes(str(b.quote))) throw fail('Основание модели не подтверждено предоставленным источником.', 502);
       return { sourceId: src.id, quote: str(b.quote), locator: str(b.locator, 500) };
     });
-    return { id: randomUUID(), factorId: f.factorId, point: str(f.point, 200), quote, explanation: str(f.explanation), basis, decision: decision() };
+    return [{ id: randomUUID(), factorId: f.factorId, point: str(f.point, 200), quote, explanation: str(f.explanation), basis, decision: decision() }];
   });
   const rows = list(raw.coverage, 12);
   if (new Set(findings.map(f => JSON.stringify([f.factorId, f.point, f.quote]))).size !== findings.length) throw fail('Аналитик вернул повторяющиеся находки.', 502);
@@ -35,10 +40,13 @@ export function validateAnalysis(raw, text, sources) {
   const coverage = rows.map(c => {
     if (!allowed.has(c.factorId) || !['finding', 'none', 'limited'].includes(c.status)) throw fail('Неполный каталог проверки.', 502);
     const has = findings.some(f => f.factorId === c.factorId);
+    if (rejectedFactors.has(c.factorId)) return { factorId: c.factorId, status: has ? 'finding' : 'limited', note: 'Одно или несколько замечаний требуют ручной сверки: цитата Аналитика не найдена в документе.' };
     if ((c.status === 'finding') !== has) throw fail('Охват факторов не соответствует находкам.', 502);
     return { factorId: c.factorId, status: c.status === 'none' && !sources.length ? 'limited' : c.status, note: str(c.note) };
   });
-  return { findings, coverage, limitations: strings(raw.limitations || []) };
+  const limitations = strings(raw.limitations || []);
+  if (rejectedFactors.size) limitations.push('Замечания с неподтверждёнными цитатами Аналитика исключены из списка. Соответствующие факторы требуют ручной сверки.');
+  return { findings, coverage, limitations };
 }
 
 export function validateReviews(raw, findings, text, sources = []) {
@@ -93,7 +101,7 @@ export function validateEdits(raw, eligible) {
 
 export async function completion(system, payload, options) {
   const connection = normalizeConnection(options.connection || legacyConnection(options.model));
-  const { content, finishReason } = await requestProvider(connection, options.key, system, payload, { fetcher: options.fetcher, signal: AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(120000)]) });
+  const { content, finishReason } = await requestProvider(connection, options.key, system, payload, { fetcher: options.fetcher, signal: AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(connection.provider === 'polza' ? 165000 : 120000)]) });
   if (typeof content === 'string' && options.key && content.includes(options.key)) throw fail('Ответ провайдера содержит недопустимые данные и не сохранён.', 502);
   if (options.onResponse && typeof content === 'string') await options.onResponse({ model: connection.model, provider: connection.provider, protocol: connection.protocol, requestHash: createHash('sha256').update(JSON.stringify({ system, payload, connection })).digest('hex'), response: content, finishReason, at: new Date().toISOString() });
   if (finishReason !== 'stop') throw fail('Ответ модели не завершён. Данные не приняты.', 502);

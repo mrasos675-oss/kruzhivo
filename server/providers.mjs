@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { lookup as dnsLookup } from 'node:dns';
 import { isIP } from 'node:net';
 import { Agent, fetch as networkFetch } from 'undici';
@@ -107,9 +108,26 @@ async function responseJson(response) {
 }
 export async function requestProvider(connection, key, system, payload, { fetcher, signal } = {}) {
   const c = normalizeConnection(connection), request = providerRequest(c, key, system, payload);
-  let response;
-  try { response = await (fetcher || networkFetch)(request.url, { method: 'POST', redirect: 'manual', dispatcher, signal, headers: request.headers, body: JSON.stringify(request.body) }); }
-  catch (e) { if (signal?.aborted) throw signal.reason; throw fail('Не удалось подключиться к API. Проверьте публичный адрес сервиса и доступность провайдера.', 502); }
+  const options = { method: 'POST', redirect: 'manual', dispatcher, signal, headers: request.headers, body: JSON.stringify(request.body) };
+  const send = async () => {
+    signal?.throwIfAborted();
+    try { return await (fetcher || networkFetch)(request.url, options); }
+    catch {
+      signal?.throwIfAborted();
+      return null;
+    }
+  };
+  let response = await send();
+  if (c.provider === 'polza' && (!response || [408, 429, 500, 502, 503, 504].includes(response.status))) {
+    const retryAfter = response?.headers?.get('retry-after');
+    const wait = retryAfter ? /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now() : 1000;
+    if (!(wait > 10000)) {
+      await response?.body?.cancel();
+      await delay(Math.max(1000, Number.isFinite(wait) ? wait : 1000), undefined, { signal });
+      response = await send();
+    }
+  }
+  if (!response) throw fail('Не удалось подключиться к API. Проверьте публичный адрес сервиса и доступность провайдера.', 502);
   if (!response.ok) {
     const errors = { 400: 'Провайдер отклонил параметры. Проверьте ID модели, формат API, JSON-режим и лимит ответа.', 401: 'Провайдер отклонил ключ. Проверьте настройки.', 402: 'Недостаточно средств на счёте провайдера.', 403: 'Нет доступа к модели или API. Проверьте разрешения ключа и Workspace ID.', 404: 'Модель или путь API не найдены. Проверьте ID модели и базовый адрес.', 429: 'Лимит запросов провайдера. Повторите запуск позже.' };
     // Do not follow redirects or expose error bodies: they may echo a credential.
