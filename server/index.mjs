@@ -15,7 +15,7 @@ import { createExpertReview, expertDocx } from './expert-review.mjs';
 import { pipeline } from './engine.mjs';
 import { proposalForDecision, isArchived } from '../shared/review.mjs';
 import { createOriginals } from './originals.mjs';
-import { PROVIDERS, PROTOCOLS, legacyConnection, emptyConnection, normalizeConnection, sameDestination } from './providers.mjs';
+import { PROVIDERS, PROTOCOLS, legacyConnection, emptyConnection, normalizeConnection, requestProvider, sameDestination } from './providers.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const string = (x, max, label) => { if (typeof x !== 'string' || !x.trim() || x.length > max) throw fail(`${label}: допустимо от 1 до ${max} символов.`, 400); return x.trim(); };
@@ -173,6 +173,25 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
       }
       if(req.method==='DELETE'&&p==='/api/settings/personal'&&access){await jsonBody(req);await access.clearPersonal();return json(res,200,{ok:true});}
       if(req.method==='POST'&&p==='/api/admin/login'&&access){const b=await jsonBody(req);await access.login(b.token);return json(res,200,{ok:true});}
+      if (req.method === 'POST' && p === '/api/settings/probe') {
+        if (hosted && !access?.canManage) throw fail('Диагностика доступна только администратору.', 403);
+        if (!apiKey || !connection.model) throw fail('Подключите модель перед диагностикой.', 400);
+        const selectedConnection = connection, key = apiKey, attempts = [];
+        const permit = credentials?.reserve ? await credentials.reserve() : null;
+        try {
+          const { content, finishReason } = await requestProvider(
+            selectedConnection, key, 'Проверка подключения. Ответь только JSON: {"ok":true}.', { prompt: 'ping' },
+            { fetcher, signal: AbortSignal.timeout(20000), onAttempt: attempt => attempts.push(attempt) }
+          );
+          const ok = finishReason === 'stop' && typeof content === 'string' && !!content.trim();
+          return json(res, 200, { ok, attempts, ...(ok ? {} : { error: 'Модель не вернула завершённый текстовый ответ.' }) });
+        } catch (error) {
+          const failure = [...attempts].reverse().find(attempt => attempt.code);
+          return json(res, 200, { ok: false, attempts, error: failure?.code || (error.status ? error.message : 'Ответ провайдера не получен.') });
+        } finally {
+          if (permit) await credentials.release(permit);
+        }
+      }
       if (req.method === 'POST' && p === '/api/settings') {
         if(access&&!access.canManage)throw fail('Изменять общий ключ может только владелец подключения.',403);
         const b = await jsonBody(req);

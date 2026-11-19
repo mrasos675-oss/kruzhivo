@@ -106,16 +106,34 @@ async function responseJson(response) {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch (e) { if (e.status) throw e; throw fail('Провайдер вернул некорректный ответ. Проверьте адрес и формат API.', 502); }
 }
-export async function requestProvider(connection, key, system, payload, { fetcher, signal } = {}) {
+const networkCodes = new Set([
+  'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENETUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET',
+  'ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'API_NETWORK_BLOCKED', 'API_ADDRESS_UNAVAILABLE'
+]);
+
+function networkCode(error, signal) {
+  if (signal?.aborted) return signal.reason?.name === 'TimeoutError' ? 'TIMEOUT' : 'ABORTED';
+  const cause = error?.cause || error;
+  return [cause?.code, cause?.message, error?.code].find(code => networkCodes.has(code)) || 'NETWORK_ERROR';
+}
+
+export async function requestProvider(connection, key, system, payload, { fetcher, signal, onAttempt } = {}) {
   const c = normalizeConnection(connection), request = providerRequest(c, key, system, payload);
   const options = { method: 'POST', redirect: 'manual', dispatcher, signal, headers: request.headers, body: JSON.stringify(request.body) };
   const send = async () => {
     signal?.throwIfAborted();
-    try { return await (fetcher || networkFetch)(request.url, options); }
-    catch {
+    const start = performance.now();
+    let response;
+    try { response = await (fetcher || networkFetch)(request.url, options); }
+    catch (error) {
+      onAttempt?.({ code: networkCode(error, signal), elapsedMs: Math.round(performance.now() - start) });
       signal?.throwIfAborted();
       return null;
     }
+    onAttempt?.({ httpStatus: response.status, elapsedMs: Math.round(performance.now() - start) });
+    return response;
   };
   let response = await send();
   if (c.provider === 'polza' && (!response || [408, 429, 500, 502, 503, 504].includes(response.status))) {

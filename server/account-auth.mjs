@@ -79,6 +79,7 @@ export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=fals
 }
 
 export function roleAllowed(user,method,path){
+ if(path==='/api/settings/probe')return user.role==='admin'&&method==='POST';
  if(user.role==='admin')return method==='GET'&&['/api/bootstrap','/api/methodology'].includes(path)||method==='POST'&&path==='/api/settings';
  if(path==='/api/profile'&&method==='PUT')return true;
  if(['/api/settings','/api/admin/login','/api/settings/personal'].includes(path))return false;
