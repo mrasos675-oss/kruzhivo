@@ -451,9 +451,7 @@ a[aria-current="page"] > .expert-queue-dot:not([hidden]) { color: inherit; }
   color: var(--on-accent);
 }
 .sidebar .nav > a:is([href='/gov/new'], [href='#upload'])::before {
-  width: 22px;
-  height: 22px;
-  flex-basis: 22px;
+  content: none;
 }
 .sidebar .nav > a:is([href='/gov/new'], [href='#upload']).active {
   box-shadow: inset 3px 0 var(--on-accent), 0 0 0 2px var(--accent);
