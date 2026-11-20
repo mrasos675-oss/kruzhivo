@@ -454,5 +454,11 @@ a[aria-current="page"] > .expert-queue-dot:not([hidden]) { color: inherit; }
   content: none;
 }
 .sidebar .nav > a:is([href='/gov/new'], [href='#upload']).active {
-  box-shadow: inset 3px 0 var(--border);
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: none;
+}
+.sidebar .nav > a:is([href='/gov/new'], [href='#upload']).active:hover {
+  background: var(--accent-hover);
+  color: var(--on-accent);
 }
