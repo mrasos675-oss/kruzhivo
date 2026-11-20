@@ -38,8 +38,8 @@ test('Confirmation freezes an exact conclusion and document version, rejects sta
 });
 
 test('Dashboard excludes seeded educational records and counts expert-confirmed conclusions separately',()=>{
- const db=seed(),html=overview(db,[]);assert.match(html,/>Загружено документов<\/p><strong>0</);assert.match(html,/>Готово заключений<\/p><strong>0</);
- const withConclusion=overview(db,[{id:'confirmed-case',role:'official',status:'confirmed',isDemo:false,createdAt:'2026-11-17T12:00:00Z'}]);assert.match(withConclusion,/>Готово заключений<\/p><strong>1</);assert.ok(!html.includes('У вас пока нет проверок'));
+ const db=seed(),html=overview(db,[]);assert.match(html,/>Загружено документов<\/p><strong>0</);assert.match(html,/>Подтверждено экспертом<\/p><strong>0</);
+ const withConclusion=overview(db,[{id:'confirmed-case',role:'official',status:'confirmed',isDemo:false,createdAt:'2026-11-17T12:00:00Z'}]);assert.match(withConclusion,/>Подтверждено экспертом<\/p><strong>1</);assert.ok(!html.includes('У вас пока нет проверок'));
 });
 
 test('Expert case list has compact facts and actions without demo notices; records and role-specific detail routes remain intact',()=>{
@@ -60,5 +60,12 @@ test('Expert workspace keeps a single findings list, tab panels, evidence and ro
  for(const value of ['Редакция автора','Комментарий автора','Основание автора','Норма закона','Сохранённый черновик'])assert.ok(html.includes(value),value);
  assert.ok(!html.includes('<script>'));assert.equal(JSON.stringify(c),before);
  assert.ok(!expertCase({...c,role:'official'}).includes('id="expert-draft-form"'));
+ const confirmed={...c,role:'official',conclusions:[{...c.conclusions[0],status:'confirmed',confirmedAt:'2026-11-17T12:00:00Z'}]};
+ const next=expertCase(confirmed,{documentId:'doc-38'});
+ assert.match(next,/data-action="version" data-doc="doc-38"/);
+ assert.ok(!expertCase({...confirmed,role:'expert'},{documentId:'doc-38'}).includes('data-action="version"'));
+ assert.ok(!expertCase({...c,role:'official'},{documentId:'doc-38'}).includes('data-action="version"'));
+ assert.match(next,/Исходный текст и прежние заключения сохраняются/);
+
  assert.ok(!expertCase({...c,conclusions:[{...c.conclusions[0],status:'confirmed',confirmedAt:'2026-11-17T12:00:00Z'}]}).includes('id="expert-draft-form"'));
 });

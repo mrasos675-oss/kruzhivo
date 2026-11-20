@@ -57,6 +57,9 @@ test('Empty human correction survives export and saving a checked example', asyn
     const example = await f.request('examples', { runId: run.id, findingId: finding.id });
     const after = (await f.request('bootstrap')).body;
     assert.equal(after.examples.find(x => x.id === example.body.id).proposal, '');
+    const log=after.documents[0].actionLog;assert.equal(log.length,1);assert.equal(log[0].action,'confirmed');assert.equal(log[0].findingId,finding.id);assert.ok(log[0].author);assert.ok(log[0].createdAt);
+    assert.equal((await f.request(`runs/${run.id}/findings/${finding.id}`,{status:'modified',revision:0},'PUT')).status,409);
+    assert.equal((await f.request('bootstrap')).body.documents[0].actionLog.length,1);
     const report = await fetch(`${f.base}/api/runs/${run.id}/report.docx`);
     const text = extractDocx(Buffer.from(await report.arrayBuffer()));
     assert.match(text, /Редакция специалиста: правка не предложена/);

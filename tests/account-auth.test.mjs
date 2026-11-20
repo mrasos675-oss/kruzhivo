@@ -129,17 +129,16 @@ test('Shared cabinets start clean and a DOCX goes to the expert queue without se
  assert.ok(!html.includes('<script>'));assert.ok(!html.includes('id="login-form"'));
 });
 
-test('Registration persists private hashed accounts, grants no owner rights, and never changes an existing role',async()=>{
- const storage=memoryBlob();let auth=createAccountAuth(master,accounts,storage);
- const request={username:'new.expert',password:'testing-only-long-password',displayName:'Новый эксперт',role:'expert',consent:true};
- await assert.rejects(auth.register({...request,role:'admin'},'invalid-role'),e=>e.status===400);
- await assert.rejects(auth.register({...request,consent:false},'no-consent'),e=>e.status===400);
- const user=await auth.register(request,'registration-ip');assert.equal(user.role,'expert');assert.ok(!('passwordHash' in user));
- auth=createAccountAuth(master,accounts,storage);const signed=await auth.login(request.username,request.password,'new-login');
- assert.equal((await auth.current(signed.cookie)).id,user.id);assert.equal((await auth.listAccounts()).filter(a=>a.id===user.id).length,1);
- assert.ok(![...storage.files.values()].some(v=>v.bytes.includes(request.password)));
- await assert.rejects(auth.register({...request,role:'official'},'registration-ip'),e=>e.status===409);
- assert.equal((await auth.current(signed.cookie)).role,'expert');
+test('Registration is disabled without writing accounts; existing saved accounts can still log in',async()=>{
+ const storage=memoryBlob(),request={username:'new.expert',password:'testing-only-long-password',displayName:'Новый эксперт',role:'expert',consent:true};
+ const saved={id:'previous-expert',username:request.username,role:'expert',displayName:request.displayName,salt:'a'.repeat(32),passwordHash:await passwordHash(request.password,'a'.repeat(32))};
+ await storage.put('auth/registered-accounts-v1.json',JSON.stringify({accounts:[saved]}),{allowOverwrite:false});
+ const before=storage.files.get('auth/registered-accounts-v1.json').bytes;
+ const auth=createAccountAuth(master,accounts,storage);
+ for(const role of ['official','expert','admin'])await assert.rejects(auth.register({...request,role},'registration-ip'),e=>e.status===403);
+ assert.equal(storage.files.get('auth/registered-accounts-v1.json').bytes,before);
+ const signed=await auth.login(request.username,request.password,'existing-login');
+ assert.equal((await auth.current(signed.cookie)).id,saved.id);
 });
 
 test('Both roles can save isolated profiles; stale edits, forged avatars and expert writes are rejected; sample DOCX is usable',async t=>{
@@ -160,7 +159,7 @@ test('Both roles can save isolated profiles; stale edits, forged avatars and exp
  const response=await fetch(base+'/api/sample-documents/permit.docx',{headers:{cookie:official.cookie}});
  assert.equal(response.status,200);const {extractDocx}=await import('../server/files.mjs');assert.match(extractDocx(Buffer.from(await response.arrayBuffer())),/УЧЕБНЫЙ ПРИМЕР/);
  assert.equal((await call('auth/session',null)).body.user,null);
- const registered=await call('auth/register',null,{username:'created.via.http',password:'test-http-password-long',displayName:'HTTP account',role:'expert',consent:true});assert.equal(registered.status,200);assert.equal(registered.body.user.role,'expert');assert.equal((await call('settings',registered.cookie,{key:'test'})).status,403);
+ const registered=await call('auth/register',null,{username:'created.via.http',password:'test-http-password-long',displayName:'HTTP account',role:'expert',consent:true});assert.equal(registered.status,403);assert.equal(registered.cookie,undefined);
 });
 
 test('Administrator password login alone manages shared API; normal accounts and old owner cookies cannot change it',async t=>{

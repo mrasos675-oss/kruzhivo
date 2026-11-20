@@ -25,10 +25,10 @@ return async function handler(req, res) {
       ...(pilotMode?{demoAccount:(rows,role)=>rows.find(a=>a.role===role&&(role==='admin'||demoProfileFor(a)))}:{})
     }):null;
     const authJson=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});return res.end(JSON.stringify(data));};
-    if(auth&&['/api/auth/login','/api/auth/register','/api/auth/demo-login'].includes(path)&&req.method==='POST'){
+    if(path==='/api/auth/register')return authJson(403,{error:'Регистрация недоступна.'});
+    if(auth&&['/api/auth/login','/api/auth/demo-login'].includes(path)&&req.method==='POST'){
       let body=req.body;if(body===undefined){let bytes='';for await(const chunk of req){bytes+=chunk.toString();if(Buffer.byteLength(bytes)>4096)throw Object.assign(new Error('Слишком большой запрос.'),{status:413});}body=bytes;}
       try{if(typeof body==='string'||Buffer.isBuffer(body))body=JSON.parse(body.toString());if(!body||Array.isArray(body)||typeof body!=='object'||Buffer.byteLength(JSON.stringify(body))>4096)throw Error('Bad body');}catch{throw Object.assign(new Error('Некорректный запрос.'),{status:400});}
-      if(path==='/api/auth/register')await auth.register(body,String(req.headers['x-vercel-forwarded-for']||req.socket?.remoteAddress||'unknown'));
       const ip=String(req.headers['x-vercel-forwarded-for']||req.socket?.remoteAddress||'unknown');
       const signed=path==='/api/auth/demo-login'?await auth.loginDemo(body.role,ip,req.headers.cookie):await auth.login(body.username,body.password,ip,req.headers.cookie);
       res.setHeader('Set-Cookie',[signed.cookie,'__Host-kruzhivo-admin=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict']);return authJson(200,{user:signed.user,demoLogin,pilotMode});

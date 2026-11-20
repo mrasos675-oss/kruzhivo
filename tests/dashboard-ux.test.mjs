@@ -8,10 +8,20 @@ import {demoProfileFor} from '../server/profile.mjs';
 import {seed} from '../server/store.mjs';
 import {reportDocx,unzipEntry,extractDocx} from '../server/files.mjs';
 
+test('Official counters distinguish AI runs from pending expert cases within the selected period',()=>{
+ const at='2026-11-20T12:00:00Z',old='2025-01-01T12:00:00Z';
+ const db={documents:[{id:'d',name:'Проверка показателей',createdAt:at,versions:[],runs:[{id:'r1',mode:'api',status:'running',createdAt:at,findings:[]},{id:'r2',mode:'api',status:'completed',createdAt:at,findings:[]},{id:'r3',mode:'api',status:'failed',createdAt:at,findings:[]}]}]};
+ const cases=[{role:'official',status:'waiting',createdAt:at},{role:'official',status:'reviewing',createdAt:at},{role:'official',status:'confirmed',createdAt:at},{role:'official',status:'waiting',createdAt:old},{role:'expert',status:'waiting',createdAt:at},{role:'official',status:'waiting',isDemo:true,createdAt:at}];
+ const html=officialDashboard(db,cases,{period:'custom',from:'2026-11-20',to:'2026-11-20'});
+ assert.match(html,/ИИ: в работе \/ готово<\/p><strong><span class="metric-running">1<\/span> \/ <span class="metric-ready">1<\/span>/);
+ assert.match(html,/Передано эксперту<\/p><strong>2<\/strong>/);
+ assert.match(html,/Подтверждено экспертом<\/p><strong>1<\/strong>/);
+});
+
 test('Dashboard period filtering includes full dates, rejects reversed range, and separates illustrative from real data',()=>{
  const now=Date.parse('2026-11-16T12:00:00Z'),activity=demoActivity(now);assert.equal(selectPeriod(activity,{period:'month'},now).length,8);assert.equal(selectPeriod(activity,{period:'quarter'},now).length,23);assert.equal(selectPeriod(activity,{},now).length,24);
  assert.equal(selectPeriod([{createdAt:'2026-11-10T12:00:00'}],{period:'custom',from:'2026-11-10',to:'2026-11-10'},now).length,1);assert.equal(selectPeriod(activity,{period:'custom',from:'2026-11-16',to:'2026-11-01'},now).length,0);
- const db=seed(),before=JSON.stringify(db);const real=officialDashboard(db,[],{mode:'real'});for(const text of ['Проверить новый документ','В правовой базе нет проверенных источников','У вас пока нет проверок','Требуют внимания','Последние проверки','Проценты показывают ход работы','Учебные документы','Попробовать на эталонном регламенте'])assert.ok(!real.includes(text));assert.match(real,/id="dashboard-filter-form"/);assert.match(real,/Завершённые проверки/);assert.match(real,/Динамика проверок/);assert.match(real,/>Загружено документов<\/p><strong>0</);assert.ok(!real.includes('Демонстрационные показатели'));
+ const db=seed(),before=JSON.stringify(db);const real=officialDashboard(db,[],{mode:'real'});for(const text of ['Проверить новый документ','В правовой базе нет проверенных источников','У вас пока нет проверок','Требуют внимания','Последние проверки','Проценты показывают ход работы','Учебные документы','Попробовать на эталонном регламенте'])assert.ok(!real.includes(text));assert.match(real,/id="dashboard-filter-form"/);assert.ok(!real.includes('Завершённые проверки'));assert.match(real,/Запуски проверок НПА/);assert.match(real,/>Загружено документов<\/p><strong>0</);assert.ok(!real.includes('Демонстрационные показатели'));
  const demo=officialDashboard(db,[],{mode:'demo'});assert.match(demo,/Демонстрационные показатели/);assert.match(demo,/>Загружено документов<\/p><strong>24</);assert.match(demo,/stroke-dasharray=/);assert.match(demo,/Рассмотренные замечания/);assert.equal(JSON.stringify(db),before);
  assert.match(expertDashboard([],{mode:'real'}),/Появится после первых результатов/);
 });

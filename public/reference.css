@@ -189,7 +189,8 @@ dialog::backdrop { background: #17243470; }
 .landing-hero {
   grid-template-columns: minmax(0, 1.16fr) minmax(0, .84fr);
   gap: clamp(24px, 5vw, 64px);
-  padding-block: clamp(48px, 7vw, 96px);
+  padding-top: clamp(24px, 4vw, 48px);
+  padding-bottom: 32px;
 }
 .entry-intro h1 {
   font-size: clamp(2.125rem, 4.25vw, 3.625rem);
@@ -238,7 +239,7 @@ dialog::backdrop { background: #17243470; }
 @media (max-width: 768px) {
   .landing-nav { gap: 12px; }
   .landing-nav > .actions { width: auto; margin-inline-start: auto; justify-content: flex-end; }
-  .landing-hero { grid-template-columns: minmax(0, 1fr); padding-block: 36px; gap: 24px; }
+  .landing-hero { grid-template-columns: minmax(0, 1fr); padding-top: 24px; padding-bottom: 24px; gap: 24px; }
   .entry-intro h1 { font-size: clamp(2rem, 7vw, 3rem); }
   .dashboard-toolbar { padding: 12px; }
   .metric-grid .card { min-height: 110px; }
@@ -435,4 +436,25 @@ a[aria-current="page"] > .expert-queue-dot:not([hidden]) { color: inherit; }
  .provision-map-empty,.provision-graph-details,.provision-map-inspector{padding:14px}
  .provision-map-canvas{min-width:500px}
  .provision-map-scroll{max-height:56vh}
+}
+
+/* Keep the existing new-check entry prominent on every sidebar page. */
+.sidebar .nav > a:is([href='/gov/new'], [href='#upload']) {
+  margin-block: 4px 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 750;
+  box-shadow: 0 3px 8px rgb(0 0 0 / 12%);
+}
+.sidebar .nav > a:is([href='/gov/new'], [href='#upload']):hover {
+  background: var(--accent-hover);
+  color: var(--on-accent);
+}
+.sidebar .nav > a:is([href='/gov/new'], [href='#upload'])::before {
+  width: 22px;
+  height: 22px;
+  flex-basis: 22px;
+}
+.sidebar .nav > a:is([href='/gov/new'], [href='#upload']).active {
+  box-shadow: inset 3px 0 var(--on-accent), 0 0 0 2px var(--accent);
 }

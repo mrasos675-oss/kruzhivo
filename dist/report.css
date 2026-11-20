@@ -11,6 +11,7 @@
   text-align: left;
 }
 .report-toolbar { display:flex; flex-wrap:wrap; gap:.625rem; margin-bottom:1rem; }
+.review-report, .review-report * { box-sizing:border-box; }
 .content .review-report { max-width: 940px; margin: 0 auto; padding: clamp(1rem, 3.5vw, 2.5rem); border: 1px solid #d3dbe5; }
 .review-report :is(p, h1, h2, h3, h4, ul, ol, dl, dd, blockquote) { margin: 0; }
 .review-report h1, .review-report h2, .review-report h3 { color: var(--report-brand); line-height: 1.18; }

@@ -17,7 +17,7 @@ export function policySnapshot(connection) {
 }
 
 export function methodology() {
-  return structuredClone({ version: POLICY_VERSION, prompts: PROMPTS, roles: ROLES, methodology: METHOD_GUIDANCE, references: METHOD_REFERENCES, factorChecks: FACTOR_CHECKS, materials: MATERIAL_LIBRARY, qualityCases: QUALITY_CASES, catalogApproved: CATALOG.approved });
+  return structuredClone({ version: POLICY_VERSION, prompts: PROMPTS, roles: ROLES, methodology: METHOD_GUIDANCE, references: METHOD_REFERENCES, factorChecks: FACTOR_CHECKS, materials: MATERIAL_LIBRARY, qualityCases: QUALITY_CASES, catalog: CATALOG, catalogApproved: CATALOG.approved });
 }
 
 // A manifest records the actual input objects; it never contains an API key.

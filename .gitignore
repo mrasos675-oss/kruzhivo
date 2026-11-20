@@ -1,0 +1,21 @@
+.env
+.env.*
+!.env.example
+data/
+node_modules/
+*.log
+.DS_Store
+coverage/
+public/review.mjs
+.vercel/
+
+# Local browser verification snapshot
+docs/review-proof.jpg
+
+# Generated shared browser modules
+public/shared/
+
+# Generated deployment output
+/dist/
+.vercel
+.env*

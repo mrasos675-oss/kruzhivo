@@ -42,20 +42,7 @@ export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=fals
  }
  return {
   async listAccounts(){return (await allAccounts()).map(publicAccount);},
-  async register(b,ip){
-   await throttle('', 'registration:'+ip);
-   const username=typeof b.username==='string'?b.username.trim().toLowerCase():'';
-   if(!/^[a-z0-9._-]{3,64}$/.test(username)||typeof b.password!=='string'||b.password.length<12||b.password.length>200||!['official','expert'].includes(b.role)||typeof b.displayName!=='string'||!b.displayName.trim()||b.displayName.length>200||b.consent!==true)throw fail('Заполните ФИО, роль, логин от 3 символов, пароль от 12 символов и согласие.',400);
-   const salt=randomBytes(16).toString('hex'),a={id:'user-'+randomBytes(16).toString('hex'),username,role:b.role,displayName:b.displayName.trim(),salt,passwordHash:await passwordHash(b.password,salt)};
-   for(let i=0;i<5;i++){
-    let meta=null;try{meta=await storage.head(registryPath);}catch(e){if(!['BlobNotFoundError'].includes(e.name)&&e.message!=='Missing')throw e;}
-    const existing=meta?await read(registryPath):null,list=parseAccounts(existing?.accounts||[]);
-    if([...rows,...list].some(x=>x.username===username))throw fail('Этот логин недоступен. Выберите другой.',409);
-    if(list.length>=100)throw fail('Регистрация временно приостановлена: достигнут лимит демоверсии.',503);
-    try{await storage.put(registryPath,JSON.stringify({accounts:[...list,a]}),{...writeOptions,allowOverwrite:!!meta,...(meta?{ifMatch:meta.etag}:{})});return publicAccount(a);}catch(e){if(!['BlobPreconditionFailedError','BlobAlreadyExistsError'].includes(e.name))throw e;}
-   }
-   throw fail('Повторите регистрацию через несколько секунд.',409);
-  },
+  async register(){throw fail('Регистрация недоступна.',403);},
   accounts:rows.map(publicAccount),
   async current(header){const token=tokenFrom(header);if(!/^[\w-]{43}$/.test(token||''))return null;const s=await read(path(token));if(!s||s.expiresAt<=Date.now()||s.demo&&!demoEnabled)return null;const account=rows.find(a=>a.id===s.accountId)||(await allAccounts()).find(a=>a.id===s.accountId);return account&&s.stamp===stamp(account)?publicAccount(account):null;},
   async login(username,password,ip,header){
@@ -88,6 +75,7 @@ export function roleAllowed(user,method,path){
   return user.role==='expert'&&(method==='POST'&&path==='/api/sources'||method==='PATCH'&&/^\/api\/sources\/[^/]+$/.test(path));
  }
  if(user.role==='expert'&&method==='GET'&&/^\/api\/sample-documents\/[a-z0-9-]+\.docx$/.test(path))return true;
+ if(user.role==='expert'&&((method==='POST'&&path==='/api/examples')||(method==='PATCH'&&/^\/api\/examples\/[^/]+$/.test(path))))return true;
  if(user.role==='official')return !/\/expert-cases\/[^/]+\/(accept|start|draft|sign|new-draft)$/.test(path);
  if(method==='GET')return ['/api/bootstrap','/api/methodology','/api/expert-cases','/api/expert-cases/history'].includes(path)||/^\/api\/expert-cases\/[a-f0-9-]{36}(?:\/conclusions\/[0-9]+\.docx)?$/.test(path);
  return ['POST','PUT'].includes(method)&&/^\/api\/expert-cases\/[a-f0-9-]{36}\/(accept|start|messages|draft|sign|new-draft)$/.test(path);

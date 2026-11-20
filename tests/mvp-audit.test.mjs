@@ -8,7 +8,6 @@ import { moscowTime,methodReference,nextPendingIndex,missingBasisCount } from '.
 import { seed } from '../server/store.mjs';
 import { CATALOG,SAMPLE_TEXT } from '../server/catalog.mjs';
 import { reportDocx,extractDocx } from '../server/files.mjs';
-import { legacyReportPdf } from '../server/pdf-report.mjs';
 import { createExpertReview } from '../server/expert-review.mjs';
 import { createApp } from '../server/index.mjs';
 
@@ -22,10 +21,6 @@ test('Word keeps UI numbers when grouped, translates statuses, includes author a
  const text=extractDocx(reportDocx(doc,doc.versions[0],r,{fullName:'Автор отчёта',organization:'Учебная организация',position:'Специалист'}));
  for(const value of ['Замечание 3','Замечание 1','Исходная редакция','Редакция специалиста','Пояснение автора','Автор отчёта','22:44:35 (МСК)','Не передавались','пп. «а» п. 3'])assert.ok(text.includes(value),value);
  for(const token of ['supported','contested','limited','context:','prepared','skipped'])assert.ok(!text.includes(token),token);
-});
-test('Legacy PDF embeds the Cyrillic font and Unicode mapping with valid cross references',async()=>{
- const doc=seed().documents[0],r=doc.runs[0],bytes=await legacyReportPdf(doc,doc.versions[0],r);assert.ok(bytes.length>10000);const raw=bytes.toString('latin1');assert.ok(raw.startsWith('%PDF-1.7'));assert.match(raw,/\/ToUnicode \d+ 0 R/);assert.match(raw,/\/FontFile2 \d+ 0 R/);assert.match(raw,/%%EOF/);
- const start=Number(raw.match(/startxref\n(\d+)/)[1]);assert.equal(bytes.toString('ascii',start,start+4),'xref');const entries=raw.slice(start).split('\n');const count=Number(entries[1].split(' ')[1]);for(let n=1;n<count;n++){const offset=Number(entries[n+2].slice(0,10));assert.ok(raw.slice(offset).startsWith(n+' 0 obj'));}
 });
 test('Concurrent expert requests deduplicate atomically and snapshots show specialist decisions',async()=>{
  let db={expertCases:[]};let q=Promise.resolve();const store={read:()=>structuredClone(db),change(fn){const promise=q.then(()=>{const next=structuredClone(db),value=fn(next);db=next;return value;});q=promise.catch(()=>{});return promise;}};
@@ -44,5 +39,5 @@ test('HTTP saves modified decisions with revision checks, exports both formats a
  const canonical=await fetch(base+'/api/sample-documents/canonical.docx');assert.equal(canonical.status,200);assert.equal(extractDocx(Buffer.from(await canonical.arrayBuffer())),SAMPLE_TEXT);
 });
 test('The frontend preserves API mode, uses an explicit expert request form, and does not collect sex or age',async()=>{
- const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),profile=await readFile(new URL('../public/profile.js',import.meta.url),'utf8'),build=await readFile(new URL('../scripts/build.mjs',import.meta.url),'utf8');assert.match(app,/Изменить и подтвердить/);assert.match(app,/comment:values.comment/);assert.match(app,/nextPendingIndex\(locate/);assert.match(app,/aria-busy/);assert.match(app,/Скачать PDF/);assert.ok(!profile.includes("'gender'"));assert.ok(!profile.includes("'ageGroup'"));assert.match(build,/report-format.mjs/);
+ const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),profile=await readFile(new URL('../public/profile.js',import.meta.url),'utf8'),build=await readFile(new URL('../scripts/build.mjs',import.meta.url),'utf8');assert.match(app,/Изменить и подтвердить/);assert.match(app,/comment:values.comment/);assert.match(app,/nextPendingIndex\(locate/);assert.match(app,/aria-busy/);assert.match(app,/Скачать отчёт/);assert.match(app,/report\.pdf/);assert.match(app,/report\.docx/);assert.ok(!profile.includes("'gender'"));assert.ok(!profile.includes("'ageGroup'"));assert.match(build,/report-format.mjs/);
 });

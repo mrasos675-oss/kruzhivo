@@ -7,8 +7,8 @@ import {profilePage,expertOverview} from '../public/profile.js';
 import {samplesPage,SAMPLE_DOCUMENTS} from '../public/samples.js';
 
 test('Public page explains all four sections without fabricated platform totals; profile and samples escape text',()=>{
- const page=landingPage('<script>');for(const t of ['Экспертная поддержка','Современные технологии','Повышение эффективности','Лучшие практики','Воспользоваться','Зарегистрироваться'])assert.ok(page.includes(t));assert.ok(!page.includes('<script>'));assert.ok(!page.includes('0 000'));assert.ok(!page.includes('100%'));assert.ok(page.includes('minjust.gov.ru/ru/activity/govservices/12/'));
- assert.match(registrationPage(),/autocomplete="new-password"/);assert.match(profilePage({fullName:'<script>'},{role:'expert'}),/&lt;script&gt;/);assert.doesNotMatch(expertOverview([{isDemo:true,status:'confirmed'}]),/Учебных дел|Ваши реальные проверки/);assert.equal(SAMPLE_DOCUMENTS.length,4);assert.match(samplesPage(),/permit.docx/);
+ const page=landingPage('<script>');for(const t of ['Экспертная поддержка','Современные технологии','Повышение эффективности','Лучшие практики'])assert.ok(page.includes(t));assert.ok(!page.includes('<script>'));assert.ok(!page.includes('0 000'));assert.ok(!page.includes('100%'));assert.ok(page.includes('minjust.gov.ru/ru/activity/govservices/12/'));
+ assert.doesNotMatch(registrationPage(),/<form|autocomplete="new-password"/);assert.match(profilePage({fullName:'<script>'},{role:'expert'}),/&lt;script&gt;/);assert.doesNotMatch(expertOverview([{isDemo:true,status:'confirmed'}]),/Учебных дел|Ваши реальные проверки/);assert.equal(SAMPLE_DOCUMENTS.length,4);assert.match(samplesPage(),/permit.docx/);
 });
 
 test('Legal base routes all three sections through the shared catalog and keeps run snapshots separate',async()=>{
