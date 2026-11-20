@@ -6,6 +6,7 @@ export function fakeGithub(){
  const response=(status,data,headers)=>new Response(data===undefined?null:JSON.stringify(data),{status,headers});
  const api={blobs,trees,commits,refs,calls,private:true,failStatus:null,blob,archive:[],
   async request(url,options={}){
+   if(options.headers?.['X-GitHub-Api-Version']!=='2022-11-28')throw Error('Unsupported API contract');
    const u=new URL(url),path=u.pathname.replace('/repos/mrasos675-oss/kruzhivo',''),method=options.method||'GET',data=options.body?JSON.parse(options.body):null;calls.push({path,method,data});
    if(api.failStatus)return response(api.failStatus,{message:'sensitive diagnostic must never escape'});
    if(!path)return response(200,{private:api.private,full_name:'mrasos675-oss/kruzhivo'});

@@ -109,7 +109,7 @@ return async function handler(req, res) {
     await app.handler(req, res);
   } catch (e) {
     // Never log request bodies, cookies, provider responses, document text or credentials.
-    if (!e.status) console.error('kruzhivo: request failed', { type: e.name });
+    if (!e.status||e.status>=500) console.error('kruzhivo: request failed', { type:e.name,...(e.githubOperation?{operation:e.githubOperation,status:e.githubStatus||0}:{}) });
     if (!res.headersSent) res.writeHead(e.status || 503, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ error: e.status ? e.message : 'Сервис временно недоступен. Повторите действие позже.' }));
   }

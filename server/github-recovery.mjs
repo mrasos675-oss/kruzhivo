@@ -8,7 +8,7 @@ const unavailable=()=>Object.assign(new Error('Не удалось прочит�
 export async function recoverGithubHistory({storage,master,token,account,request=fetch}){
  if(storage.kind!=='github'||!account||account.role!=='official')throw unavailable();
  const repository=storage.repository,base='https://api.github.com/repos/'+repository;
- async function read(path){let r;try{r=await request(base+path,{headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10'},redirect:'error',signal:AbortSignal.timeout(20000)});}catch{throw unavailable();}if(!r.ok)throw unavailable();return r.json();}
+ async function read(path){let r;try{r=await request(base+path,{headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},redirect:'error',signal:AbortSignal.timeout(20000)});}catch{throw unavailable();}if(!r.ok)throw unavailable();return r.json();}
  const tree=await read('/git/trees/review-history?recursive=1');if(tree.truncated)throw unavailable();
  const paths=tree.tree.filter(e=>e.type==='blob'&&/^reviews\/[a-f0-9-]{36}\/(01-submission|02-result)\.json$/.test(e.path));
  if(paths.length>400)throw unavailable();

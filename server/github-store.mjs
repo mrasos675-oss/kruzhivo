@@ -29,9 +29,10 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
  }catch{throw unavailable();}}
  async function call(path,{method='GET',data,headers={},allowed=[]}={}){
   if(!token||typeof master!=='string'||master.length<43)throw unavailable();
-  let response;try{response=await request(base+path,{method,redirect:'error',headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10',...(data?{'Content-Type':'application/json'}:{}),...headers},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(15000)});}catch{throw unavailable();}
+  const operation=path.startsWith('/git/')?path.split('/')[2]:path.startsWith('/contents/')?'index':'repository';
+  let response;try{response=await request(base+path,{method,redirect:'error',headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(data?{'Content-Type':'application/json'}:{}),...headers},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(15000)});}catch{const e=unavailable();e.githubOperation=operation;throw e;}
   if(response.status===304||allowed.includes(response.status))return {status:response.status,response};
-  if(!response.ok){const e=unavailable();e.githubStatus=response.status;throw e;}
+  if(!response.ok){const e=unavailable();e.githubStatus=response.status;e.githubOperation=operation;throw e;}
   let json;try{json=await response.json();}catch{throw unavailable();}return {status:response.status,response,json};
  }
  async function verify(){
