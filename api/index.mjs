@@ -1,5 +1,6 @@
 import { createGithubHistory } from '../server/github-history.mjs';
-import { createPostgresStorage } from '../server/postgres-store.mjs';
+import { createGithubStorage } from '../server/github-store.mjs';
+import { recoverGithubHistory } from '../server/github-recovery.mjs';
 import { demoProfileFor } from '../server/profile.mjs';
 import { waitUntil } from '@vercel/functions';
 import { createAccountAuth, roleAllowed, parseAccounts } from '../server/account-auth.mjs';
@@ -40,7 +41,12 @@ return async function handler(req, res) {
     if(auth&&path==='/api/auth/session'&&req.method==='GET')return authJson(200,{user:account,demoLogin,pilotMode});
     if(auth&&!account)return authJson(401,{error:'Войдите по логину и паролю.'});
     if(auth&&!roleAllowed(account,req.method,path))return authJson(403,{error:'Действие недоступно для вашей роли.'});
-    const reviewStore=createCloudStore('expert-review-v1',master,storage,{initialDb:()=>({schemaVersion:1,documents:[],sources:[],examples:[],expertCases:[]})});
+    if(auth&&account.role==='admin'&&path==='/api/storage/recover'&&req.method==='POST'){
+      const owner=accounts.find(a=>a.role==='official'&&demoProfileFor(a));
+      if(!owner)return authJson(409,{error:'Не найден общий кабинет для восстановления архива.'});
+      return authJson(200,await recoverGithubHistory({storage,master,token:process.env.KRUZHIVO_GITHUB_TOKEN,account:owner}));
+    }
+    const reviewStore=createCloudStore('expert-review-v1',master,storage,{reuseReads:true,initialDb:()=>({schemaVersion:1,documents:[],sources:[],examples:[],expertCases:[]})});
     if(auth&&req.method==='GET'){
       if(path==='/api/methodology')return authJson(200,methodology());
       if(path==='/api/expert-cases'||path==='/api/expert-cases/history'){
@@ -55,7 +61,7 @@ return async function handler(req, res) {
     }
     if (fresh) session = newSession(master);
     const workspace=account?'account-'+account.id+(sharedCabinet?'-operations-v1':''):session.id;
-    const store = createCloudStore(workspace, master, storage,(pilotMode||['expert','admin'].includes(account?.role))?{initialDb:()=>({schemaVersion:1,documents:[],sources:[],examples:[]})}:{});
+    const store = createCloudStore(workspace, master, storage,(pilotMode||['expert','admin'].includes(account?.role))?{reuseReads:true,initialDb:()=>({schemaVersion:1,documents:[],sources:[],examples:[]})}:{reuseReads:true});
     const adminToken=getAdminToken();
     const shared=adminToken?createSharedConnection(master,storage):null;
     const workspaceReady=(async()=>{
@@ -91,7 +97,7 @@ return async function handler(req, res) {
     const effectiveAccount=account&&profile?.fullName?{...account,displayName:profile.fullName}:account;
     const app = await createApp({
       store, originals: store.originals, hosted: true, pilotMode, trainingReader:sharedCabinet, queueExpert, origin,
-      bootstrapState:workspaceState, initialKey: credential.key, initialModel: credential.model, initialConnection: credential.connection,
+      bootstrapState:workspaceState, storageInfo:storage?.kind==='github'?{provider:'github',recoveryAvailable:account?.role==='admin'}:null, initialKey: credential.key, initialModel: credential.model, initialConnection: credential.connection,
       access, fetcher, actorId:account?'account:'+account.id:session.id, account:effectiveAccount, experts:auth&&!pilotMode?(await auth.listAccounts()).filter(a=>a.role==='expert').map(a=>({...a,displayName:demoProfileFor(a)?.fullName||a.displayName})):[], reviewStore, sourceLibrary,
       credentials: { expiresAt: credential.expiresAt, set: async (key, model, connection) => {
         if(shared) {if(!canManage)throw Object.assign(new Error('Изменять общий ключ может только владелец подключения.'),{status:403});await shared.set(key,connection);if(!key)await store.setCredential('',personal.model,personal.connection);return;}
@@ -110,5 +116,5 @@ return async function handler(req, res) {
 }
 
 }
-const databaseUrl = process.env.DATABASE_URL;
-export default createHostedHandler({pilotMode:true, storage:databaseUrl ? createPostgresStorage(databaseUrl) : undefined});
+const runtimeStorage=createGithubStorage({token:process.env.KRUZHIVO_GITHUB_TOKEN,master:process.env.KRUZHIVO_SESSION_SECRET});
+export default createHostedHandler({pilotMode:true,storage:runtimeStorage});

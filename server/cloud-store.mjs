@@ -7,11 +7,11 @@ import { legacyConnection, emptyConnection, normalizeConnection } from './provid
 
 const readOptions = { access: 'private', useCache: false };
 const CONNECTION_ENVELOPE = 'kruzhivo-connection-v2:';
-const writeOptions = { access: 'private', addRandomSuffix: false, contentType: 'application/json', cacheControlMaxAge: 0, ttlDays: 30 };
-export function createCloudStore(workspace, master, storage = blob, { initialDb = seed } = {}) {
+const writeOptions = { access: 'private', addRandomSuffix: false, contentType: 'application/json', cacheControlMaxAge: 0 };
+export function createCloudStore(workspace, master, storage = blob, { initialDb = seed, reuseReads = false } = {}) {
   const prefix = `workspaces/${workspace}/`, path = prefix + 'state.json';
-  let queue = Promise.resolve();
-  async function readState() {
+  let queue = Promise.resolve(), snapshot;
+  async function loadState() {
     const result = await storage.get(path, readOptions);
     if (!result || result.statusCode === 404) return null;
     if (result.statusCode !== 200) throw fail('Рабочее пространство недоступно. Обновите страницу.',503);
@@ -19,8 +19,12 @@ export function createCloudStore(workspace, master, storage = blob, { initialDb 
     if (state.db?.schemaVersion !== 1) throw fail('Несовместимое хранилище.',503);
     return state;
   }
-  async function requireState() {
-    const state=await readState();
+  async function readState(fresh=false) {
+    if(!reuseReads||fresh)return loadState();
+    snapshot ||= loadState().catch(error=>{snapshot=undefined;throw error;});return snapshot;
+  }
+  async function requireState(fresh=false) {
+    const state=await readState(fresh);
     if(!state)throw fail('Рабочее пространство недоступно. Обновите страницу.',503);
     return state;
   }
@@ -29,9 +33,9 @@ export function createCloudStore(workspace, master, storage = blob, { initialDb 
       // Retry only the pure mutation against the latest snapshot, with an atomic ETag guard.
       for (let attempt = 0; attempt < 5; attempt++) {
         // Conditional writes still use the storage ETag read before the snapshot.
-        const {etag}=await storage.head(path),state=await requireState(),result=fn(state);
+        const {etag}=await storage.head(path),state=await requireState(true),result=fn(state);
         const serialized = JSON.stringify(state);
-        try { await storage.put(path, serialized, { ...writeOptions, allowOverwrite: true, ifMatch: etag }); return result; }
+        try { await storage.put(path, serialized, { ...writeOptions, allowOverwrite: true, ifMatch: etag }); snapshot=undefined; return result; }
         catch (e) { if (!(e instanceof blob.BlobPreconditionFailedError) && e.name !== 'BlobPreconditionFailedError') throw e; }
       }
       throw fail('Данные изменяются в другой вкладке. Повторите действие.', 409);
@@ -48,7 +52,7 @@ export function createCloudStore(workspace, master, storage = blob, { initialDb 
     async initialize() {
       const db=initialDb();
       await storage.put(path,JSON.stringify({db,credential:null}),{...writeOptions,allowOverwrite:false});
-      return db;
+      snapshot=undefined;return db;
     },
     async read() { return (await requireState()).db; },
     change(fn) { return mutate(s => {
