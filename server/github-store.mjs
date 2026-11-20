@@ -2,6 +2,7 @@ import {createHash, createHmac, randomBytes, randomUUID, createCipheriv, createD
 import {deflateRawSync, inflateRawSync} from 'node:zlib';
 
 const INDEX='index.enc', MAX_BYTES=32*1024*1024;
+const DATA_CONFIG={path:'vercel.json',mode:'100644',type:'blob',content:JSON.stringify({git:{deploymentEnabled:false}})+'\n'};
 const unavailable=()=>Object.assign(new Error('Хранилище временно недоступно. Повторите действие позже.'),{status:503});
 const conflict=name=>Object.assign(new Error(name),{name});
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -12,7 +13,7 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
  if(!/^[\w.-]+\/[\w.-]+$/.test(repository)||!/^runtime-[a-z0-9-]+$/.test(branch))throw unavailable();
  const base='https://api.github.com/repos/'+repository;
  const key=createHash('sha256').update('kruzhivo-github-storage-v1\0'+String(master||'')+'\0'+repository+'\0'+branch).digest();
- let verified,cache,checkedAt=0,indexEtag,reading,generation=0,queue=Promise.resolve(),lastWrite=0;
+ let verified,cache,checkedAt=0,indexEtag,cacheHead,reading,generation=0,queue=Promise.resolve(),lastWrite=0;
  const bodies=new Map();let bodyBytes=0;
  const objectId=path=>createHmac('sha256',key).update(path).digest('hex');
  const validPath=path=>{if(typeof path!=='string'||!path||path.length>512||path.includes('..')||/[\x00-\x1f]/.test(path))throw unavailable();return path;};
@@ -33,7 +34,7 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
   let response;try{response=await request(base+path,{method,redirect:'error',headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(data?{'Content-Type':'application/json'}:{}),...headers},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(15000)});}catch{const e=unavailable();e.githubOperation=operation;throw e;}
   if(response.status===304||allowed.includes(response.status))return {status:response.status,response};
   if(!response.ok){const e=unavailable();e.githubStatus=response.status;e.githubOperation=operation;throw e;}
-  let json;try{json=await response.json();}catch{throw unavailable();}return {status:response.status,response,json};
+  let json;try{json=await response.json();}catch{const e=unavailable();e.githubOperation=operation;e.githubStatus=response.status;throw e;}return {status:response.status,response,json};
  }
  async function verify(){
   verified??=call('').then(({json})=>{if(json.private!==true||json.full_name?.toLowerCase()!==repository.toLowerCase())throw unavailable();}).catch(e=>{verified=undefined;throw e;});
@@ -51,12 +52,12 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
   if(!force&&reading)return reading;
   const version=generation;
   const job=(async()=>{
-   const r=await call('/contents/'+INDEX+'?ref='+branch,{headers:indexEtag?{'If-None-Match':indexEtag}:{},allowed:[404]});
-   let next;
-   if(r.status===304){if(!cache)throw unavailable();next=cache;}
-   else if(r.status===404){const ref=await call('/git/ref/heads/'+branch,{allowed:[404]});if(ref.status!==404)throw unavailable();next={format:1,entries:{}};}
-   else{next=decodeIndex(r.json);}
-   if(version===generation){cache=next;checkedAt=now();indexEtag=r.response.headers.get('etag')||undefined;}
+   const r=await call('/git/ref/heads/'+branch,{headers:indexEtag?{'If-None-Match':indexEtag}:{},allowed:[404]});
+   let next,head;
+   if(r.status===304){if(!cache)throw unavailable();next=cache;head=cacheHead;}
+   else if(r.status===404){next={format:1,entries:{}};}
+   else{head=r.json.object.sha;next=cache&&cacheHead===head?cache:(await snapshotAt(head)).index;}
+   if(version===generation){cache=next;cacheHead=head;checkedAt=now();indexEtag=r.response.headers.get('etag')||undefined;}
    return cache||next;
   })();
   if(!force)reading=job;try{return await job;}finally{if(reading===job)reading=undefined;}
@@ -66,16 +67,19 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
  async function readObject(e){
   let bytes=bodies.get(e.sha);if(!bytes){const {json}=await call('/git/blobs/'+e.sha);bytes=open(Buffer.from(json.content,'base64'),e.path);if(bytes.length!==e.size)throw unavailable();remember(e.sha,bytes);}return bytes;
  }
- async function snapshot(){
-  const ref=await call('/git/ref/heads/'+branch,{allowed:[404]});if(ref.status===404)return null;
-  const head=ref.json.object.sha,{json:commit}=await call('/git/commits/'+head);
-  const {json:file}=await call('/contents/'+INDEX+'?ref='+head);
+ async function snapshotAt(head){
+  const {json:commit}=await call('/git/commits/'+head),{json:tree}=await call('/git/trees/'+commit.tree.sha);
+  const entry=tree.tree.find(e=>e.path===INDEX&&e.type==='blob');if(!entry)throw unavailable();
+  const {json:file}=await call('/git/blobs/'+entry.sha);
   return {head,tree:commit.tree.sha,index:decodeIndex(file)};
+ }
+ async function snapshot(){
+  const ref=await call('/git/ref/heads/'+branch,{allowed:[404]});return ref.status===404?null:snapshotAt(ref.json.object.sha);
  }
  async function initialize(){
   const encrypted=seal(Buffer.from(JSON.stringify({format:1,entries:{}})),'index');
   const {json:b}=await call('/git/blobs',{method:'POST',data:{content:encrypted.toString('base64'),encoding:'base64'}});
-  const {json:t}=await call('/git/trees',{method:'POST',data:{tree:[{path:INDEX,mode:'100644',type:'blob',sha:b.sha},{path:'README.md',mode:'100644',type:'blob',content:'Private encrypted runtime data for КружИИво. The encryption key is held only by the server.\n'}]}});
+  const {json:t}=await call('/git/trees',{method:'POST',data:{tree:[DATA_CONFIG,{path:INDEX,mode:'100644',type:'blob',sha:b.sha},{path:'README.md',mode:'100644',type:'blob',content:'Private encrypted runtime data for КружИИво. The encryption key is held only by the server.\n'}]}});
   const {json:c}=await call('/git/commits',{method:'POST',data:{message:'Initialize encrypted application storage',tree:t.sha,parents:[]}});
   await call('/git/refs',{method:'POST',data:{ref:'refs/heads/'+branch,sha:c.sha},allowed:[422]});
  }
@@ -98,13 +102,13 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
    if(!changed)return [];
    const encrypted=seal(Buffer.from(JSON.stringify(index)),'index');
    const {json:blob}=await call('/git/blobs',{method:'POST',data:{content:encrypted.toString('base64'),encoding:'base64'}});
-   tree.push({path:INDEX,mode:'100644',type:'blob',sha:blob.sha});
+   tree.push(DATA_CONFIG,{path:INDEX,mode:'100644',type:'blob',sha:blob.sha});
    const {json:t}=await call('/git/trees',{method:'POST',data:{base_tree:s.tree,tree}});
    const {json:c}=await call('/git/commits',{method:'POST',data:{message:'Save encrypted application data',tree:t.sha,parents:[s.head]}});
    const wait=writeIntervalMs-(now()-lastWrite);if(wait>0)await sleep(wait);
    const r=await call('/git/refs/heads/'+branch,{method:'PATCH',data:{sha:c.sha,force:false},allowed:[409,422]});lastWrite=now();
    if(r.status===409||r.status===422){await sleep(100*(attempt+1));continue;}
-   generation++;cache=index;checkedAt=now();indexEtag=undefined;for(const x of saved)remember(x.entry.sha,x.bytes);
+   generation++;cache=index;cacheHead=c.sha;checkedAt=now();indexEtag=undefined;for(const x of saved)remember(x.entry.sha,x.bytes);
    return saved.map(x=>({etag:x.entry.etag}));
   }
   throw conflict('BlobPreconditionFailedError');

@@ -16,6 +16,7 @@ export function fakeGithub(){
    if(method==='PATCH'&&path.startsWith('/git/refs/heads/')){const name=path.slice(16),current=refs.get(name),commit=commits.get(data.sha);if(data.force||commit?.parents[0]===current){refs.set(name,data.sha);return response(200,{});}return response(409,{});}
    if(method==='POST'&&path==='/git/blobs')return response(201,{sha:blob(data.encoding==='base64'?Buffer.from(data.content,'base64'):Buffer.from(data.content))});
    if(method==='GET'&&path.startsWith('/git/blobs/')){const id=path.slice(11),b=blobs.get(id);return b?response(200,{sha:id,content:b.toString('base64'),encoding:'base64'}):response(404,{});}
+   if(method==='GET'&&path.startsWith('/git/trees/')){const entries=trees.get(path.slice(11));return entries?response(200,{tree:[...entries].map(([path,sha])=>({path,sha,type:'blob'}))}):response(404,{});}
    if(method==='POST'&&path==='/git/trees'){const entries=new Map(trees.get(data.base_tree)||[]);for(const e of data.tree){if(e.sha===null)entries.delete(e.path);else entries.set(e.path,e.sha||blob(e.content));}const id=sha();trees.set(id,entries);return response(201,{sha:id});}
    if(method==='POST'&&path==='/git/commits'){const id=sha();commits.set(id,{tree:data.tree,parents:data.parents});return response(201,{sha:id});}
    if(method==='GET'&&path.startsWith('/git/commits/')){const c=commits.get(path.slice(13));return c?response(200,{tree:{sha:c.tree}}):response(404,{});}

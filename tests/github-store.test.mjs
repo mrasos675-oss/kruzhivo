@@ -15,6 +15,7 @@ const read=async(s,p)=>{const r=await s.get(p);return r?new Response(r.stream).t
 test('Private GitHub storage encrypts names and contents, persists across instances, and caches immutable bodies',async()=>{
  const api=fakeGithub(),s=make(api);await s.put('private-document-name','private-document-content');
  assert.equal(api.refs.has('main'),false);assert(api.refs.has('runtime-data'));
+ const configSha=api.trees.get(api.commits.get(api.refs.get('runtime-data')).tree).get('vercel.json');assert.equal(JSON.parse(api.blobs.get(configSha)).git.deploymentEnabled,false);
  for(const b of api.blobs.values()){assert(!b.includes('private-document-content'));assert(!b.includes('private-document-name'));assert(!b.includes('test-token'));}
  const cold=make(api);assert.equal(await read(cold,'private-document-name'),'private-document-content');const before=api.calls.filter(c=>c.path.startsWith('/git/blobs/')).length;
  assert.equal(await read(cold,'private-document-name'),'private-document-content');assert.equal(api.calls.filter(c=>c.path.startsWith('/git/blobs/')).length,before);
