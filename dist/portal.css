@@ -891,9 +891,11 @@ dialog{max-height:calc(100dvh - 32px)}
 
 /* Card 40: compact navigation keeps visible labels and the active section. */
 .sidebar{overflow-y:auto}
-.sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border);margin:0 0 16px auto;width:40px;height:40px;min-height:40px;flex-shrink:0}
+.sidebar .sidebar-toggle{position:absolute;top:18px;right:20px;display:flex;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border);margin:0;width:40px;height:40px;min-height:40px;flex-shrink:0}
+.sidebar>.brand{padding-right:48px}
+.sidebar>.brand .brand-caption{margin-right:-48px}
 .sidebar-toggle svg{display:block;flex-shrink:0}
-.sidebar-collapsed .sidebar-toggle{margin-inline:auto}
+.sidebar-collapsed .sidebar-toggle{position:static;margin:0 auto 16px}
 .sidebar-collapsed .sidebar-toggle svg{transform:rotate(180deg)}
 .nav-icon{display:none}
 @media(min-width:769px){
