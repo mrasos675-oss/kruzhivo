@@ -891,7 +891,10 @@ dialog{max-height:calc(100dvh - 32px)}
 
 /* Card 40: compact navigation keeps visible labels and the active section. */
 .sidebar{overflow-y:auto}
-.sidebar .sidebar-toggle{justify-content:center;padding:8px;border:1px solid var(--border);margin-bottom:16px;width:100%;font-size:.75rem}
+.sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border);margin:0 0 16px auto;width:40px;height:40px;min-height:40px;flex-shrink:0}
+.sidebar-toggle svg{display:block;flex-shrink:0}
+.sidebar-collapsed .sidebar-toggle{margin-inline:auto}
+.sidebar-collapsed .sidebar-toggle svg{transform:rotate(180deg)}
 .nav-icon{display:none}
 @media(min-width:769px){
  .shell.sidebar-collapsed{grid-template-columns:112px minmax(0,1fr)}
@@ -904,7 +907,7 @@ dialog{max-height:calc(100dvh - 32px)}
  .sidebar-collapsed .nav-icon{display:block;font-size:1.25rem;line-height:1.3}
  .sidebar-collapsed .sidebar>.text-button,.sidebar-collapsed .sidebar-footer .btn{width:100%;justify-content:center;text-align:center;font-size:.75rem;padding:8px 2px}
 }
-@media(max-width:768px){.sidebar-toggle{display:none}}
+@media(max-width:768px){.sidebar .sidebar-toggle{display:none}}
 
 /* Work in progress and completed AI runs have explicit text and distinct colors. */
 .metric-tile .metric-running{color:#986010}.metric-tile .metric-ready{color:#197542}
