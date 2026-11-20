@@ -5,9 +5,25 @@ import {readFile} from 'node:fs/promises';
 import {pathFor} from '../public/portal-router.js';
 import {expertDashboard} from '../public/dashboard.js';
 import { documentKinds } from '../public/document-kinds.js';
+import { moscowTime } from '../shared/report-format.mjs';
 
 const source=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
 function extract(start,end){return source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));}
+test('Saved decisions and expert transfers render in the document journal with Moscow timestamps',()=>{
+ const d={runs:[{id:'r',findings:[{id:'f'}]}],actionLog:[{createdAt:'2026-11-20T12:00:00Z',author:'Специалист',action:'confirmed',runId:'r',findingId:'f'}]};
+ const context={state:{expertCases:[{id:'case',runId:'r',createdAt:'2026-11-20T12:05:00Z',requestedBy:'Специалист'}]},date:moscowTime,esc:String,A:(href,title)=>`<a href="${href}">${title}</a>`,d};
+ vm.createContext(context);vm.runInContext(extract('function documentActionLog','function historyPage'),context);
+ const html=vm.runInContext('documentActionLog(d)',context);
+ assert.match(html,/Подтвердил замечание/);assert.match(html,/Передал документ эксперту/);assert.match(html,/15:00:00/);assert.match(html,/15:05:00/);
+ assert.match(html,/#run\/r\/0/);assert.match(html,/#expert-case\/case/);assert.equal((html.match(/МСК/g)||[]).length,2);
+});
+test('Findings awaiting action are yellow while successful analysis and confirmed conclusions are complete',()=>{
+ const context={state:{expertCases:[]},esc:String,labels:{},r:{id:'r',status:'completed',findings:[{}]}};
+ vm.createContext(context);vm.runInContext(extract('function documentRunStatus','function runErrorText'),context);
+ assert.match(vm.runInContext('documentRunStatus(r)',context),/class="status pending"/);
+ context.r.findings=[];assert.match(vm.runInContext('documentRunStatus(r)',context),/class="status completed"/);
+ context.r.findings=[{}];context.state.expertCases=[{runId:'r',status:'confirmed'}];assert.match(vm.runInContext('documentRunStatus(r)',context),/class="status completed"/);
+});
 test('New-check form and text entry select New check rather than My checks',()=>{
  const context={documentKinds,state:{upload:null,db:{documents:[],config:{configured:true}}},head:()=>'',stepper:()=>'',notice:()=>'',field:()=>'',esc:String,B:()=>'',A:()=>'',shell:(html,active)=>({html,active})};
  vm.createContext(context);vm.runInContext(extract('function uploadPage','function preparePage'),context);
