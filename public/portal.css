@@ -915,7 +915,7 @@ dialog{max-height:calc(100dvh - 32px)}
 .metric-tile .metric-running{color:#986010}.metric-tile .metric-ready{color:#197542}
 
 /* The existing new-check navigation is the primary action in the official cabinet. */
-.sidebar .nav a.nav-new-check{background:var(--accent);color:var(--surface);font-weight:700;border-color:var(--accent);gap:10px}
+.sidebar .nav a.nav-new-check{background:var(--accent);color:var(--surface);font-weight:700;border:1px solid var(--border);gap:10px}
 .sidebar .nav a.nav-new-check:hover{background:var(--accent-hover)}
 .sidebar .nav a.nav-new-check .nav-icon{display:block;font-size:1.5rem;line-height:1}
 .ai-methodology + .examples-explanation{margin-top:20px}
