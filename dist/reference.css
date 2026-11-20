@@ -438,21 +438,21 @@ a[aria-current="page"] > .expert-queue-dot:not([hidden]) { color: inherit; }
  .provision-map-scroll{max-height:56vh}
 }
 
-/* Keep the existing new-check entry prominent on every sidebar page. */
+/* Keep the new-check entry outlined without a colored fill. */
 .sidebar .nav > a:is([href='/gov/new'], [href='#upload']) {
   margin-block: 4px 8px;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--surface);
+  color: var(--text);
   font-weight: 750;
-  box-shadow: 0 3px 8px rgb(0 0 0 / 12%);
+  box-shadow: none;
 }
 .sidebar .nav > a:is([href='/gov/new'], [href='#upload']):hover {
-  background: var(--accent-hover);
-  color: var(--on-accent);
+  background: var(--ui-soft);
+  color: var(--text);
 }
 .sidebar .nav > a:is([href='/gov/new'], [href='#upload'])::before {
   content: none;
 }
 .sidebar .nav > a:is([href='/gov/new'], [href='#upload']).active {
-  box-shadow: inset 3px 0 var(--on-accent), 0 0 0 2px var(--accent);
+  box-shadow: inset 3px 0 var(--border);
 }
