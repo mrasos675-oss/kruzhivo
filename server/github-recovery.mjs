@@ -14,6 +14,9 @@ export async function recoverGithubHistory({storage,master,token,account,request
  if(paths.length>400)throw unavailable();
  const events=[];
  for(const item of paths){const blob=await read('/git/blobs/'+item.sha);let event;try{event=JSON.parse(Buffer.from(blob.content,'base64').toString());}catch{throw unavailable();}events.push(event);}
+ const reviewObject=await storage.get('workspaces/expert-review-v1/state.json');
+ const reviewState=reviewObject?await new Response(reviewObject.stream).json():null;
+ const availableCases=new Set((reviewState?.db?.expertCases||[]).map(c=>c.id));
  const documents=new Map(),originals=new Map();
  for(const e of events.filter(e=>e.type==='submitted')){
   const d=e.data?.document,v=d?.version;
@@ -25,17 +28,28 @@ export async function recoverGithubHistory({storage,master,token,account,request
  for(const e of events.filter(e=>e.type==='result')){
   const d=documents.get(e.data?.documentId),r=e.data?.run;
   if(!d||!r||r.id!==e.runId||!d.versions.some(v=>v.id===r.versionId))throw unavailable();
-  if(!d.runs.some(x=>x.id===r.id))d.runs.push(structuredClone(r));
+  if(!d.runs.some(x=>x.id===r.id)){
+   const copy=structuredClone(r);
+   if(copy.expertCaseId&&!availableCases.has(copy.expertCaseId)){copy.historicalExpertCaseId=copy.expertCaseId;delete copy.expertCaseId;}
+   d.runs.push(copy);
+  }
  }
  const shared=!!demoProfileFor(account),workspace='account-'+account.id+(shared?'-operations-v1':''),path='workspaces/'+workspace+'/state.json';
  let metadata;try{metadata=await storage.head(path);}catch(e){if(e.name!=='BlobNotFoundError')throw e;}
  const existing=metadata?await storage.get(path):null,state=existing?await new Response(existing.stream).json():{db:{schemaVersion:1,documents:[],sources:[],examples:[]},credential:null};
  if(state.db?.schemaVersion!==1||!Array.isArray(state.db.documents))throw unavailable();
- let restored=0;
+ let restored=0,repaired=0;
  for(const d of documents.values()){
   d.versions.sort((a,b)=>a.number-b.number);d.runs.sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
   // An existing document can contain newer human decisions: never overwrite it.
-  if(state.db.documents.some(x=>x.id===d.id))continue;state.db.documents.push(d);restored++;
+  const current=state.db.documents.find(x=>x.id===d.id);
+  if(current){
+   if(state.db.archiveRecovery?.source==='review-history')for(const r of current.runs){
+    const archived=d.runs.find(x=>x.id===r.id);
+    if(archived?.historicalExpertCaseId===r.expertCaseId&&r.expertCaseId&&!availableCases.has(r.expertCaseId)){r.historicalExpertCaseId=r.expertCaseId;delete r.expertCaseId;repaired++;}
+   }
+   continue;
+  }state.db.documents.push(d);restored++;
  }
  state.db.archiveRecovery={source:'review-history',at:new Date().toISOString(),documents:documents.size,runs:[...documents.values()].reduce((n,d)=>n+d.runs.length,0),partial:true,notice:'Восстановлены документы и снимки проверок из GitHub. Профили, поздние решения, экспертные дела и API-подключение из недоступной Neon не восстановлены.'};
  state.db.profile ||= demoProfileFor(account);
@@ -43,5 +57,5 @@ export async function recoverGithubHistory({storage,master,token,account,request
  for(const [id,bytes]of originals){const p='workspaces/'+workspace+'/originals/'+id+'.docx';if(!await storage.get(p))changes.push({path:p,bytes,options:{allowOverwrite:false}});}
  changes.push({path,bytes:Buffer.from(JSON.stringify(state)),options:metadata?{ifMatch:metadata.etag}:{allowOverwrite:false}});
  await storage.putMany(changes);
- return {documents:documents.size,runs:state.db.archiveRecovery.runs,restored,partial:true,notice:state.db.archiveRecovery.notice};
+ return {documents:documents.size,runs:state.db.archiveRecovery.runs,restored,repaired,partial:true,notice:state.db.archiveRecovery.notice};
 }

@@ -19,3 +19,12 @@ test('A damaged archive is rejected before any runtime write',async()=>{
  const f=fixture();f.submitted.data.document.version.hash='invalid';f.api.archive=[];f.api.addArchive('reviews/'+f.submitted.runId+'/01-submission.json',f.submitted);f.api.addArchive('reviews/'+f.result.runId+'/02-result.json',f.result);
  await assert.rejects(recoverGithubHistory({...f,master,token:'test',account,request:f.api.request}),e=>e.status===503);assert.equal(f.api.refs.size,0);
 });
+test('Recovery preserves missing expert-case IDs as historical data, repairs only its own dangling links and keeps human decisions',async()=>{
+ const f=fixture(),oldCase=randomUUID();f.result.data.run.expertCaseId=oldCase;f.api.archive=[];
+ f.api.addArchive('reviews/'+f.submitted.runId+'/01-submission.json',f.submitted);f.api.addArchive('reviews/'+f.result.runId+'/02-result.json',f.result);
+ const options={...f,master,token:'test',account,request:f.api.request};await recoverGithubHistory(options);
+ const store=createCloudStore(workspace,master,f.storage);let r=(await store.read()).documents[0].runs[0];assert.equal(r.expertCaseId,undefined);assert.equal(r.historicalExpertCaseId,oldCase);
+ await store.change(db=>{const r=db.documents[0].runs[0];r.expertCaseId=oldCase;r.findings=[{decision:{status:'modified',comment:'Позднее решение'}}];});
+ assert.equal((await recoverGithubHistory(options)).repaired,1);r=(await store.read()).documents[0].runs[0];assert.equal(r.expertCaseId,undefined);assert.equal(r.findings[0].decision.comment,'Позднее решение');
+ const newCase=randomUUID();await store.change(db=>{db.documents[0].runs[0].expertCaseId=newCase;});await recoverGithubHistory(options);assert.equal((await store.read()).documents[0].runs[0].expertCaseId,newCase);
+});
