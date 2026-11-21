@@ -945,3 +945,7 @@ dialog{max-height:calc(100dvh - 32px)}
 .expert-conclusion-summary{display:flex;align-items:center;justify-content:space-between;gap:24px;border-left:4px solid var(--accent)}
 .expert-conclusion-summary h2{font-size:1.5rem}.conclusion-total{display:grid;grid-template-columns:56px auto;align-items:center;column-gap:18px;color:var(--accent);flex-shrink:0}.conclusion-total svg{grid-row:1 / 3}.conclusion-total strong{font-size:3.5rem;line-height:1.1;font-variant-numeric:tabular-nums}.conclusion-total span{color:var(--muted)}
 @media(max-width:600px){.expert-conclusion-summary{align-items:flex-start;flex-direction:column}.conclusion-total strong{font-size:3rem}}
+
+.expert-document .quote-expert{background:#cceeff;color:#123e58;border-bottom:2px solid #237da5}.quote-source{font:600 11px/1.4 system-ui;display:inline-block;margin-right:4px;padding:0 3px;border:1px solid currentColor;border-radius:3px;user-select:none}.expert-document mark mark{box-decoration-break:clone}
+
+.expert-document .quote-ai.quote-expert{background:linear-gradient(#cceeff 50%,#fff0b0 50%);color:#1f2a44}.quote-source:focus-visible{outline:2px solid currentColor;outline-offset:2px}
