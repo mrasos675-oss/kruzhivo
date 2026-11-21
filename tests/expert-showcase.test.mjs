@@ -41,3 +41,29 @@ test('Territory filters keep levels separate, escape values and narrow municipal
  const federal=expertShowcase(cases,{level:'Федеральный',region:'Область А',municipality:'Город <Б>'});assert.doesNotMatch(federal,/name="region"|name="municipality"/);
  assert.doesNotMatch(expertShowcase(cases),/>Локальный</);assert.match(expertShowcase(cases),/expert-catalog-reset/);
 });
+
+test('Showcase offers pickup and links an already started case to my cases',()=>{
+ const c={id:'pickup',role:'expert',status:'waiting',name:'НПА'};
+ assert.match(expertShowcase([c]),/data-action="expert-start" data-case="pickup"/);
+ assert.match(expertShowcase([c]),/>Взять в работу<\/button>/);
+ const started=expertShowcase([{...c,status:'reviewing'}]);
+ assert.match(started,/>В моих делах<\/a>/);
+ assert.doesNotMatch(started,/data-action="expert-start"/);
+});
+
+test('Concurrent pickup and retries preserve one case and reject another expert or archived case',async()=>{
+ const db={expertCases:[]};const store={read:async()=>structuredClone(db),change:async fn=>fn(db)};
+ const owner=createExpertReview(store,'owner'),one=createExpertReview(store,'one'),two=createExpertReview(store,'two');
+ const c=await owner.create({name:'НПА'},version('Текст'),{id:'pickup',status:'completed',mode:'api',findings:[],sources:[]},{expertId:'one',queued:true});
+ const results=await Promise.allSettled([one.start(c.id),one.start(c.id),two.start(c.id)]);
+ assert.deepEqual(results.map(r=>r.status),['fulfilled','fulfilled','rejected']);
+ assert.equal(results[2].reason.status,403);
+ const started=db.expertCases[0].startedAt;
+ await one.start(c.id);
+ assert.equal(db.expertCases.length,1);assert.equal(db.expertCases[0].conclusions.length,1);
+ assert.equal(db.expertCases[0].expertId,'one');assert.equal(db.expertCases[0].startedAt,started);
+ assert.equal((await one.list())[0].status,'reviewing');assert.deepEqual(await two.list(),[]);
+ db.expertCases[0].archivedAt='2026-11-21';
+ await assert.rejects(one.start(c.id),e=>e.status===409);
+ await assert.rejects(one.start('missing'),e=>e.status===404);
+});
