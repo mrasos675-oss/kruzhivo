@@ -37,6 +37,7 @@ export function createExpertReview(store,actor,{trainingReader=false}={}) {
       return view(c,actor);
     },
     async create(doc,version,run,options={}){
+      if(run.findings.some(f=>!['confirmed','modified','rejected'].includes(f.decision?.status)||!(f.decision.revision>0||f.decision.savedAt)))throw fail('Сначала сохраните решение по каждому замечанию.',409);
       if(run.status!=='completed')throw fail('Сначала завершите проверку ИИ.',409);
       if(options.expertId===actor)throw fail('Нельзя пригласить себя.',409);
       const comment=options.comment?text(options.comment,3000):'';

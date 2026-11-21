@@ -51,7 +51,6 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
     profile: { name: 'Общий кабинет эксперта', registryNumber: 'Аккредитация не проверена автоматически', accountId: queueExpert.id, username: queueExpert.username },
     queued: true
   };
-  const autoQueue = pilotMode && account?.role === 'official';
 
   async function queueForExpert(d, v, r, comment) {
     if (!queueOptions) throw fail('Общий кабинет эксперта пока недоступен. Повторите позже.', 503);
@@ -125,10 +124,6 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
         current.finishedAt = now();
         return { d, r: current, v };
       });
-      if (completed && autoQueue) {
-        try { await queueForExpert(completed.d, completed.v, completed.r); }
-        catch { console.error('kruzhivo: completed run could not confirm delivery to the expert queue'); }
-      }
     }
     catch (e) { await store.change(db => { const x = locate(db, runId).r; if (x.status === 'running'&&(!lease||x.execution?.token===lease||x.execution?.token===null)) { finishInterrupted(x, 'failed', e.name === 'TimeoutError' ? 'Превышено время ожидания этапа. Завершённые этапы сохранены; можно продолжить проверку.' : e.status ? e.message : 'Проверка прервана. Завершённые этапы сохранены; можно продолжить проверку.'); } }); }
     finally { jobs.delete(runId); if(permit&&!pending&&(locate(await store.read(),runId).r.status!=='running'))await credentials.release(permit); if(!pending)await saveRunResult(runId); }

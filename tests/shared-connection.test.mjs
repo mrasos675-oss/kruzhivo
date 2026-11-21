@@ -99,6 +99,7 @@ test('HTTP audit: a newly added verified project source reaches all three API pa
  const started=await call(`documents/${d.id}/runs`,bob.cookie,{versionId:d.versions[0].id,mode:'api'});assert.equal(started.status,202);await Promise.all(jobs);
  assert.equal(captured.length,3);for(const p of captured){assert.equal(p.sources.length,1);assert.equal(p.sources[0].id,added.body.id);assert.equal(p.sources[0].text,source.text);assert.ok(p.methodology.rules.length>0);}
  boot=(await call('bootstrap',bob.cookie)).body;const r=boot.documents.find(x=>x.id===d.id).runs[0];assert.equal(r.status,'completed');assert.equal(r.aiInputs.length,3);assert.ok(r.aiInputs.every(i=>i.sourceIds[0]===added.body.id));
+ for(const f of r.findings)assert.equal((await call('runs/'+r.id+'/findings/'+f.id,bob.cookie,{status:'confirmed',revision:f.decision.revision},'PUT')).status,200);
  const invited=await call('expert-cases',bob.cookie,{runId:r.id});assert.equal(invited.status,201);const id=invited.body.id;
  assert.equal((await call('expert-cases/'+id,owner)).status,403);
  assert.equal((await call('expert-cases/'+id+'/accept',carol.cookie,{token:invited.body.token,profile:{name:'Тестовый эксперт',registryNumber:'Не проверено'}})).status,200);

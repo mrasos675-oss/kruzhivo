@@ -69,3 +69,28 @@ test('Expert workspace keeps a single findings list, tab panels, evidence and ro
 
  assert.ok(!expertCase({...c,conclusions:[{...c.conclusions[0],status:'confirmed',confirmedAt:'2026-11-17T12:00:00Z'}]}).includes('id="expert-draft-form"'));
 });
+
+
+test('Transfer requires a saved explicit decision on every finding, including repeat requests',async()=>{
+ const store=memory(),owner=createExpertReview(store,'owner'),v=version('Документ'),r=run();
+ r.findings=[{decision:{status:'confirmed',revision:1}},{decision:{status:'pending',revision:0}}];
+ for(let i=0;i<2;i++)await assert.rejects(owner.create({name:'Тест'},v,r),e=>e.status===409);
+ assert.equal((await owner.list()).length,0);
+ r.findings[1].decision={status:'rejected',revision:0};
+ await assert.rejects(owner.create({name:'Тест'},v,r),e=>e.status===409);
+ r.findings[1].decision.revision=1;
+ const sent=await owner.create({name:'Тест'},v,r);
+ const repeated=await owner.create({name:'Тест'},v,r);
+ assert.equal(repeated.id,sent.id);assert.equal(repeated.existing,true);
+ assert.equal((await owner.list()).length,1);
+ r.findings[1].decision.status='pending';
+ await assert.rejects(owner.create({name:'Тест'},v,r),e=>e.status===409);
+});
+
+test('Zero findings wait for explicit transfer and repeated transfer creates no duplicate',async()=>{
+ const owner=createExpertReview(memory(),'owner'),r=run(),v=version('Без замечаний');
+ assert.equal((await owner.list()).length,0);
+ const sent=await owner.create({name:'Тест'},v,r);
+ assert.equal((await owner.create({name:'Тест'},v,r)).id,sent.id);
+ assert.equal((await owner.list()).length,1);
+});
