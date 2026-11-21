@@ -167,7 +167,7 @@ function provisionPage(id,nodeId){
 
 function expertRequestAction(r, expertCase=(state.expertCases||[]).find(item=>item.runId===r.id)) {
  const caseId=expertCase?.id||r.expertCaseId;
- return caseId ? '<span class="status">Передано эксперту</span>'+A('#expert-case/'+caseId,'Открыть дело') : B('expert-create','Передать эксперту','',`data-run="${r.id}"`);
+ return caseId ? '<span class="status">Передано эксперту</span>'+A('#expert-case/'+caseId,'Открыть дело') : B('expert-create','Передать эксперту','',`data-run="${r.id}" ${r.status!=='completed'||r.findings.some(f=>!['confirmed','modified','rejected'].includes(f.decision?.status)||!hasSavedDecision(f))?'disabled title="Сохраните решение по каждому замечанию"':''}`);
 }
 
 function expertVersionNotice(d,r){
@@ -452,21 +452,22 @@ const handlers={
   const x=locate(b.dataset.run);if(!x)return;
   modal('Какую версию проверить?',`<p>${esc(x.d.name)} · версия ${esc(x.v.number)}</p><p>Принятые замечания не внесены в исходный текст автоматически. Выберите сохранённую версию или добавьте исправленный документ.</p><div class="actions">${A('#rerun/'+x.d.id+'/'+x.v.id,'Проверить сохранённую версию','primary','data-action="report-version"')}${A('#version/'+x.d.id,'Загрузить исправленный документ','','data-action="report-version"')}${A('#version-text/'+x.d.id,'Вставить исправленный текст','','data-action="report-version"')}</div>`);
  },
- 'expert-create':b=>{
+ 'expert-create':async b=>{
  const x=locate(b.dataset.run),experts=state.db.config.experts||[],pending=counts(x.r).pending;
+ if(x.r.findings.some(f=>!['confirmed','modified','rejected'].includes(f.decision?.status)||!hasSavedDecision(f))){toast('Сначала сохраните решение по каждому замечанию.');return;}
  const existing=(state.expertCases||[]).find(c=>c.runId===x.r.id);
  if(existing){go('expert-case/'+existing.id);return;}
  const transferSummary=`<p><strong>${esc(x.d.name)}</strong> · версия документа ${esc(String(x.v.number))} · проверка № ${esc(String(x.r.number||x.r.id))}</p><p>Передаются снимок документа, результаты этой проверки ИИ и сохранённые решения специалиста. Последующие изменения не меняют переданный снимок.</p>`;
+ if(state.pilotMode&&!x.r.findings.length){const c=await api('expert-cases',{runId:x.r.id});await refresh();go('expert-case/'+c.id);return;}
  if(state.pilotMode){
    modal('Отправить в очередь экспертов',`<form id="expert-assign-form" class="stack" data-run="${x.r.id}">
      ${transferSummary}<p>Дело появится в общей очереди кабинета эксперта.</p>
      ${field('comment','Сопроводительный комментарий','',{area:true,max:3000})}
-     ${pending?'<label class="radio"><input name="acknowledge" type="checkbox" required>Передать предварительный результат с нерассмотренными замечаниями</label>':''}
      <button type="submit" class="btn primary">Отправить в очередь</button>
    </form>`);
    return;
  }
- modal('Запрос независимой экспертизы',`<form id="expert-assign-form" data-run="${x.r.id}" class="stack">${transferSummary}<label class="field"><span>Приглашённый эксперт</span><select name="expertAccountId">${experts.map(e=>`<option value="${esc(e.id)}">${esc(e.displayName)} · ${esc(e.username)}</option>`).join('')}<option value="">Создать персональную ссылку приглашения</option></select></label>${field('comment','Сопроводительный комментарий','',{area:true,max:3000})}${pending?notice('Осталось нерассмотренных замечаний: '+pending,'Передаваемый анализ будет предварительным.')+'<label class="radio"><input name="acknowledge" type="checkbox" required>Передать предварительные результаты вместе с нерассмотренными замечаниями</label>':''}<p class="muted">Регистрация аккаунта не подтверждает аккредитацию. Это демонстрация экспертного модуля этапа 3.</p><button class="btn primary" type="submit">Передать эксперту</button></form>`);},
+ modal('Запрос независимой экспертизы',`<form id="expert-assign-form" data-run="${x.r.id}" class="stack">${transferSummary}<label class="field"><span>Приглашённый эксперт</span><select name="expertAccountId">${experts.map(e=>`<option value="${esc(e.id)}">${esc(e.displayName)} · ${esc(e.username)}</option>`).join('')}<option value="">Создать персональную ссылку приглашения</option></select></label>${field('comment','Сопроводительный комментарий','',{area:true,max:3000})}<p class="muted">Регистрация аккаунта не подтверждает аккредитацию. Это демонстрация экспертного модуля этапа 3.</p><button class="btn primary" type="submit">Передать эксперту</button></form>`);},
  'expert-start':async b=>{await api('expert-cases/'+b.dataset.case+'/start',{});await refresh();render();},
  'expert-invite':async b=>showExpertInvitation(await api('expert-cases/'+b.dataset.case+'/invite',{})),
  'storage-recover':async()=>{const result=await api('storage/recover',{});await refresh();render();toast('Восстановлено документов: '+result.documents+', проверок: '+result.runs+'. '+result.notice);},
