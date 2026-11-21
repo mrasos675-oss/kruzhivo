@@ -112,7 +112,7 @@ window.addEventListener('popstate',()=>{if(state.dirty){const target=location.hr
 window.addEventListener('hashchange',()=>{if(isAccessLink()){routeChanged();return;}const token=currentToken();history.replaceState(null,'',lastRouteURL);go(token);});
 function shell(content,active='documents',crumb='Документы',{checksNavigation=true}={}){
  const administrator=state.account?.role==='admin',expert=state.account?.role==='expert',home=administrator?'methodology':expert?'experts':'overview',name=state.db.profile?.fullName||state.account?.displayName||'';
- const primary=administrator?[['methodology','Работа ИИ агентов']]:expert?[['experts','Главная'],['expert-done','Мои заключения'],['methodology','Работа ИИ агентов'],['sources','Правовая база']]:[['overview','Главная'],['upload','Новая проверка'],['documents','Мои проверки'],['methodology','Работа ИИ агентов'],['sources','Правовая база']];
+ const primary=administrator?[['methodology','Работа ИИ агентов']]:expert?[['experts','Главная'],['expert-done','Мои дела'],['methodology','Работа ИИ агентов'],['sources','Правовая база']]:[['overview','Главная'],['upload','Новая проверка'],['documents','Мои проверки'],['methodology','Работа ИИ агентов'],['sources','Правовая база']];
  const navActive=!administrator&&!expert&&['history','experts','case-history'].includes(active)?'documents':active;
  const checksTabs=checksNavigation&&!administrator&&!expert&&['documents','history','experts','case-history'].includes(active)?'<nav class="actions queue-tabs" aria-label="Мои проверки">'+[['documents','Мои проверки'],['experts','Экспертные заключения'],['case-history','История проверок']].map(([id,title])=>A('#'+id,title,active===id?'primary':'',active===id?'aria-current="page"':'')).join('')+'</nav>':'';
  const waiting=(state.expertCases||[]).some(c=>!c.isDemo&&c.status==='waiting');
@@ -342,10 +342,10 @@ function expertHome(){
 }
 function expertConclusionsPage(){
  const cases=(state.expertCases||[]).filter(c=>!c.isDemo);
- return shell(head('Мои заключения')+`<div class="stack">
+ return shell(head('Мои дела')+`<div class="stack">
    <div class="actions">${B('refresh-expert-cases','Обновить список','compact')}${A('#case-history','История проверок','compact')}</div>
    ${expertList(cases,state.queueFilter||'all')}
- </div>`,'expert-done','Мои заключения');
+ </div>`,'expert-done','Мои дела');
 }
 function needsMethodology(){
  const page=currentToken();
