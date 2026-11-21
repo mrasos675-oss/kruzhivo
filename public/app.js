@@ -423,6 +423,7 @@ const handlers={
  'history-select':b=>{state.historySelection={...state.historySelection,[b.dataset.doc]:{versionId:b.dataset.version,runId:b.dataset.run||null}};render();},
  'retry-case-history':async()=>{await loadCaseHistory();render();},
  'expert-catalog-level':b=>{const form=b.closest('form');state.expertCatalog={query:form.elements.query.value,level:b.dataset.level,region:'',municipality:''};render();},
+ 'expert-catalog-clear-query':()=>{state.expertCatalog={...state.expertCatalog,query:''};render();},
  'expert-catalog-reset':()=>{state.expertCatalog={};render();},
  'refresh-expert-cases':async()=>{await refreshExpertCases();render();},
  'demo-login':async b=>{
