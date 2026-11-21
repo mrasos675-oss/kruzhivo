@@ -23,6 +23,24 @@ import { PROVIDERS, PROTOCOLS, legacyConnection, emptyConnection, normalizeConne
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const string = (x, max, label) => { if (typeof x !== 'string' || !x.trim() || x.length > max) throw fail(`${label}: допустимо от 1 до ${max} символов.`, 400); return x.trim(); };
 const optional = (x, max = 10000) => x == null || x === '' ? '' : string(x, max, 'Поле');
+function npaMetadata(input) {
+  const { level, source } = input;
+  if (!['Федеральный', 'Региональный', 'Муниципальный', 'Локальный'].includes(level))
+    throw fail('Выберите допустимый уровень НПА.', 400);
+  const region = optional(input.region, 100) || null;
+  const municipality = optional(input.municipality, 98) || null;
+  const needsRegion = level === 'Региональный' || level === 'Муниципальный';
+  if (Boolean(region) !== needsRegion || Boolean(municipality) !== (level === 'Муниципальный'))
+    throw fail('Заполните территорию в соответствии с уровнем НПА.', 400);
+  if (source === 'manual') return { level, region, municipality, source, sourceUrl: null };
+  if (source !== 'official') throw fail('Укажите источник сведений о НПА.', 400);
+  const sourceUrl = optional(input.sourceUrl, 2000);
+  let url;
+  try { url = new URL(sourceUrl); } catch { throw fail('Укажите ссылку на официальный источник.', 400); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+    throw fail('Укажите ссылку на официальный источник.', 400);
+  return { level, region, municipality, source, sourceUrl: url.href };
+}
 function findDoc(db, docId) { const d = db.documents.find(x => x.id === docId); if (!d) throw fail('Документ не найден.', 404); return d; }
 function locate(db, runId) { for (const d of db.documents) { const r = d.runs.find(x => x.id === runId); if (r) return { d, r, v: d.versions.find(v => v.id === r.versionId) }; } throw fail('Запуск не найден.', 404); }
 function safeUrl(value) { let u; try { u = new URL(string(value, 2000, 'URL')); } catch { throw fail('Укажите корректный HTTP(S)-адрес.', 400); } if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password) throw fail('Укажите HTTP(S)-адрес без пароля.', 400); return u.href; }
@@ -228,10 +246,19 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
         const v = version(text, 1, optional(b.fileName, 250) || 'Вставленный текст');
         if (b.kind !== undefined && !documentKinds.includes(b.kind)) throw fail('Выберите допустимый вид документа.', 400);
         if (b.level && !['Федеральный','Региональный','Муниципальный','Локальный'].includes(b.level)) throw fail('Выберите допустимый уровень НПА.',400);
-        const d = { id: id(), kind: b.kind || null, level: b.level || null, territory: optional(b.territory, 200) || null, name: string(b.name, 180, 'Название'), sample: b.text===SAMPLE_TEXT||b.text===CLEAN_TEXT||b.text?.includes('УЧЕБНЫЙ ПРИМЕР. Не является действующим нормативным правовым актом.')===true, createdAt: now(), versions: [v], runs: [] };
+        const metadata = b.source || 'region' in b || 'municipality' in b ? npaMetadata(b) : null;
+        const territory = metadata ? [metadata.region, metadata.municipality].filter(Boolean).join(', ') : optional(b.territory, 200);
+        const d = { id: id(), ...(metadata && { npaMetadata: metadata }), kind: b.kind || null, level: b.level || null, territory: territory || null, name: string(b.name, 180, 'Название'), sample: b.text===SAMPLE_TEXT||b.text===CLEAN_TEXT||b.text?.includes('УЧЕБНЫЙ ПРИМЕР. Не является действующим нормативным правовым актом.')===true, createdAt: now(), versions: [v], runs: [] };
         await originals.attach(b.uploadId, v);
         try { await store.change(db => { db.documents.unshift(d); }); } catch (error) { await originals.discard(v); throw error; }
         return json(res, 201, { id: d.id });
+      }
+      const metadataMatch = p.match(/^\/api\/documents\/([^/]+)\/metadata$/);
+      if (req.method === 'PATCH' && metadataMatch) {
+        if (account && account.role !== 'official') throw fail('Изменять карточку НПА может специалист.', 403);
+        const metadata = npaMetadata(await jsonBody(req));
+        await store.change(db => { findDoc(db, metadataMatch[1]).npaMetadata = metadata; });
+        return json(res, 200, { ok: true });
       }
       let m = p.match(/^\/api\/documents\/([^/]+)\/versions$/);
       if (req.method === 'POST' && m) {
