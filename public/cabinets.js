@@ -1,3 +1,4 @@
+export { expertShowcase } from './expert-showcase.js';
 import {expertReviewPanel,conclusionTools} from './expert-editor.js';
 import { moscowTime, ruStatus } from '../shared/report-format.mjs';
 import { officialDashboard } from './dashboard.js';

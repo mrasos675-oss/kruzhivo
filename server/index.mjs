@@ -227,7 +227,8 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
         const b = await jsonBody(req), text = string(b.text, 80000, 'Текст документа');
         const v = version(text, 1, optional(b.fileName, 250) || 'Вставленный текст');
         if (b.kind !== undefined && !documentKinds.includes(b.kind)) throw fail('Выберите допустимый вид документа.', 400);
-        const d = { id: id(), kind: b.kind || null, name: string(b.name, 180, 'Название'), sample: b.text===SAMPLE_TEXT||b.text===CLEAN_TEXT||b.text?.includes('УЧЕБНЫЙ ПРИМЕР. Не является действующим нормативным правовым актом.')===true, createdAt: now(), versions: [v], runs: [] };
+        if (b.level && !['Федеральный','Региональный','Муниципальный','Локальный'].includes(b.level)) throw fail('Выберите допустимый уровень НПА.',400);
+        const d = { id: id(), kind: b.kind || null, level: b.level || null, territory: optional(b.territory, 200) || null, name: string(b.name, 180, 'Название'), sample: b.text===SAMPLE_TEXT||b.text===CLEAN_TEXT||b.text?.includes('УЧЕБНЫЙ ПРИМЕР. Не является действующим нормативным правовым актом.')===true, createdAt: now(), versions: [v], runs: [] };
         await originals.attach(b.uploadId, v);
         try { await store.change(db => { db.documents.unshift(d); }); } catch (error) { await originals.discard(v); throw error; }
         return json(res, 201, { id: d.id });
