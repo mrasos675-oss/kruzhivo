@@ -482,7 +482,16 @@ const handlers={
  'retry-upload':()=>go(state.fileError?.docId?'version/'+state.fileError.docId:'upload'),
  'error-paste':()=>go(state.fileError?.docId?'version-text/'+state.fileError.docId:'paste'),
  confirm:()=>saveDecision('confirmed'),
- 'confirm-modified':()=>saveDecision('modified'),
+ 'confirm-modified':()=>{
+  const x=target();if(!x?.f||isArchived(x.d,x.r)||x.r.status!=='completed')return;
+  const proposal=$('#decision-form [name="proposal"]');if(!proposal)return;
+  modal(`Замечание № ${x.index+1}`,field('edited-proposal','Предлагаемая редакция',proposal.value,{area:true,rows:6}),B('save-modified','Сохранить изменённую редакцию','primary')+B('modal-close','Отмена'));
+  const input=$('#modal [name="edited-proposal"]');input.focus();input.setSelectionRange(input.value.length,input.value.length);
+ },
+ 'save-modified':async()=>{
+  const input=$('#modal [name="edited-proposal"]'),proposal=$('#decision-form [name="proposal"]');if(!input||!proposal)return;
+  proposal.value=input.value;await saveDecision('modified');closeModal();
+ },
  'previous-finding':()=>navigateFinding(-1),
  'next-finding':()=>navigateFinding(1),
  'next-review':()=>{const x=target(),next=nextPendingIndex(x.r,x.index);if(next>=0&&next!==x.index)go('run/'+x.r.id+'/'+next);else toast('Других нерассмотренных замечаний нет.');},
