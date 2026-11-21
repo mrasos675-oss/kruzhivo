@@ -89,7 +89,7 @@ test('Signed-in users can open the landing and its sections from both cabinet lo
  for(const role of ['official','expert']){state.account.role=role;const account=state.account;for(const next of ['home','about','features','support','become-expert','contacts']){token=next;vm.runInContext('render()',context);assert.match(output.innerHTML,/Landing/);assert.equal(state.account,account);}token='login';assert.equal(vm.runInContext('route()[0]',context),role==='expert'?'experts':'overview');}
  context.esc=String;context.navForUser=()=>[];context.B=()=>'';context.A=()=>'';context.accessButton=()=>'';state.db={profile:{fullName:'Имя'},config:{hosted:true}};
  vm.runInContext(extract('function shell(','function workflowProgress'),context);
- for(const role of ['official','expert']){state.account.role=role;const html=vm.runInContext("shell('')",context);assert.equal((html.match(/href="#home" class="brand"/g)||[]).length,2);if(role==='expert'){assert.match(html,/href="#experts"[^>]*>Главная/);assert.doesNotMatch(html,/Очередь/);}}
+ for(const role of ['official','expert']){state.account.role=role;const html=vm.runInContext("shell('')",context);assert.equal((html.match(/href="#home" class="brand"/g)||[]).length,2);if(role==='expert'){assert.match(html,/href="#experts"[^>]*>Кабинет эксперта/);assert.match(html,/<span class="nav-label">Главная<\/span>/);assert.doesNotMatch(html,/Очередь/);}}
 });
 
 test('Expert cases are listed in conclusions, while the home menu signals waiting cases only',()=>{
