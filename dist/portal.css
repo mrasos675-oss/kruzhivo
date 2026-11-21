@@ -867,16 +867,9 @@ dialog{max-height:calc(100dvh - 32px)}
 .history-page>.checks-count{margin:0}
 @media(max-width:768px){.history-page .checks-page-header .checks-search{order:3;flex-basis:100%;max-width:none}}
 
-/* Action explanations: native disclosure also works by keyboard and touch. */
-.action-help{display:inline-block;position:relative;align-self:center}
-.action-help>summary{cursor:pointer;list-style:none;border:1px solid currentColor;border-radius:50%;width:1.5rem;height:1.5rem;text-align:center;line-height:1.4rem}
-.action-help>summary::-webkit-details-marker{display:none}
-.action-help>summary:focus-visible{outline:2px solid currentColor;outline-offset:3px}
-.action-help-text{display:block;position:absolute;z-index:20;top:100%;right:0;width: min(19rem,75vw);padding:.75rem;background:#fff;color:#172b35;border:1px solid #bac7cc;border-radius:8px;box-shadow:0 4px 16px #0002;font-size:.875rem;line-height:1.5}
-.action-help:not([open])>.action-help-text{display:none}
-.action-help:hover>.action-help-text,.action-help:focus-within>.action-help-text{display:block}
-
-.action-help:hover::details-content,.action-help:focus-within::details-content{content-visibility:visible}
+/* Explanations appear after holding the associated action for one second. */
+.action-help[hidden]{display:none}
+.action-hold-tooltip{position:fixed;z-index:110;width:max-content;max-width:min(22rem,calc(100vw - 16px));padding:12px;background:var(--surface,#fff);color:var(--text,#172b35);border:1px solid var(--border,#bac7cc);border-radius:8px;box-shadow:0 4px 16px #0002;font-size:.875rem;line-height:1.5;pointer-events:none;overflow-wrap:anywhere}
 
 .history-action-panel{margin:16px 0;padding:16px;border:1px solid var(--border,#ddd);border-radius:12px}.history-action-panel .actions{flex-wrap:wrap}.history-run-error{grid-column:1/-1;color:var(--danger,#a32929);overflow-wrap:anywhere}
 
