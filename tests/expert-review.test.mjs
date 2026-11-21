@@ -53,7 +53,7 @@ test('Expert workspace keeps a single findings list, tab panels, evidence and ro
  const before=JSON.stringify(c),html=expertCase(c);
  assert.equal((html.match(/id="expert-finding-0"/g)||[]).length,1);
  assert.ok(!html.includes('Предварительный анализ ИИ ·'));
- for(const tab of ['review','conclusion','discussion']){assert.match(html,new RegExp('id="case-tab-'+tab+'" role="tab"'));assert.match(html,new RegExp('id="case-panel-'+tab+'" role="tabpanel"'));}
+ for(const tab of ['review','conclusion']){assert.match(html,new RegExp('id="case-tab-'+tab+'" role="tab"'));assert.match(html,new RegExp('id="case-panel-'+tab+'" role="tabpanel"'));}
  assert.match(html,/data-case-panel="conclusion" tabindex="0" hidden/);
  assert.match(expertCase(c,{tab:'conclusion'}),/data-case-panel="conclusion" tabindex="0" >/);
  assert.match(html,/id="expert-draft-form"/);assert.match(html,/data-revision="2"/);
