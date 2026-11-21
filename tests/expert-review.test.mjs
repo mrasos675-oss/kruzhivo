@@ -94,3 +94,14 @@ test('Zero findings wait for explicit transfer and repeated transfer creates no 
  assert.equal((await owner.create({name:'Тест'},v,r)).id,sent.id);
  assert.equal((await owner.list()).length,1);
 });
+
+
+test('A new document version and analysis preserve the prior confirmed expert case',async()=>{
+ const store=memory(),owner=createExpertReview(store,'owner'),expert=createExpertReview(store,'expert');
+ const doc={id:'same-document',name:'Проект'},v1=version('Первая редакция',1),r1=run();
+ const first=await owner.create(doc,v1,r1);await expert.accept(first.id,first.token,{name:'Эксперт',registryNumber:'123'});
+ await expert.save(first.id,'Заключение по первой версии',0);await expert.sign(first.id,1);
+ const before=await owner.get(first.id),v2=version('Исправленная редакция',2,'updated.docx'),r2={...run(),id:'run-2'};
+ const second=await owner.create(doc,v2,r2),after=await owner.get(first.id),next=await owner.get(second.id);
+ assert.deepEqual(after,before);assert.notEqual(first.id,second.id);assert.equal(next.document.number,2);assert.equal(next.document.text,v2.text);assert.equal(next.run.id,r2.id);assert.equal(after.document.hash,v1.hash);assert.equal(after.conclusions[0].confirmation.runId,r1.id);
+});
