@@ -105,3 +105,15 @@ test('A new document version and analysis preserve the prior confirmed expert ca
  const second=await owner.create(doc,v2,r2),after=await owner.get(first.id),next=await owner.get(second.id);
  assert.deepEqual(after,before);assert.notEqual(first.id,second.id);assert.equal(next.document.number,2);assert.equal(next.document.text,v2.text);assert.equal(next.run.id,r2.id);assert.equal(after.document.hash,v1.hash);assert.equal(after.conclusions[0].confirmation.runId,r1.id);
 });
+
+test('Expert verdicts survive case reload and repeated verdict replaces one record',async()=>{
+ const {withExpertDecision,readExpertDecisions}=await import('../public/expert-editor.js');
+ const store=memory(),owner=createExpertReview(store,'owner'),expert=createExpertReview(store,'expert');
+ const {id,token}=await owner.create({name:'Test'},version('Test'),run());await expert.accept(id,token,{name:'Expert',registryNumber:'123'});
+ let c=await expert.get(id),draft=c.conclusions.at(-1);
+ let text=withExpertDecision(draft.text,1,'confirmed','');await expert.save(id,text,draft.revision);
+ c=await expert.get(id);draft=c.conclusions.at(-1);assert.equal(readExpertDecisions(draft.text).size,1);
+ text=withExpertDecision(draft.text,1,'rejected','Reason');await expert.save(id,text,draft.revision);
+ c=await expert.get(id);draft=c.conclusions.at(-1);text=withExpertDecision(draft.text,1,'rejected','Reason');await expert.save(id,text,draft.revision);
+ const records=readExpertDecisions((await expert.get(id)).conclusions.at(-1).text);assert.equal(records.size,1);assert.deepEqual(records.get(1),{status:'rejected',comment:'Reason'});
+});
