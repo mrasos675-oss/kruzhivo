@@ -84,7 +84,7 @@ test('History groups by document identity, preserves all version and run links a
 
 test('Signed-in users can open the landing and its sections from both cabinet logos without losing their account',()=>{
  let token='home';const output={innerHTML:''};const state={account:{role:'official'},db:null};
- const context={state,currentToken:()=>token,pathFor,$:()=>output,landingPage:()=>'<main>Landing</main>'};
+ const context={state,currentToken:()=>token,pathFor,$:()=>output,paintApp:html=>{output.innerHTML=html;},landingPage:()=>'<main>Landing</main>'};
  vm.createContext(context);vm.runInContext(extract('const route=','const date =')+extract('function expertHome()','function aiConnectionCard()'),context);
  for(const role of ['official','expert']){state.account.role=role;const account=state.account;for(const next of ['home','about','features','support','become-expert','contacts']){token=next;vm.runInContext('render()',context);assert.match(output.innerHTML,/Landing/);assert.equal(state.account,account);}token='login';assert.equal(vm.runInContext('route()[0]',context),role==='expert'?'experts':'overview');}
  context.esc=String;context.navForUser=()=>[];context.B=()=>'';context.A=()=>'';context.accessButton=()=>'';state.db={profile:{fullName:'Имя'},config:{hosted:true}};
@@ -94,7 +94,7 @@ test('Signed-in users can open the landing and its sections from both cabinet lo
 
 test('Expert cases are listed in conclusions, while the home menu signals waiting cases only',()=>{
  let token='experts';const output={innerHTML:''},cases=[{id:'demo',name:'Учебное дело',isDemo:true,status:'reviewing'},{id:'real',name:'Реальное дело',isDemo:false,status:'waiting',createdAt:new Date().toISOString()},{id:'work',name:'Дело в работе',status:'reviewing'},{id:'done',name:'Готовое дело',status:'confirmed'}];
- const context={state:{account:{role:'expert'},db:{profile:{fullName:'Эксперт'}},expertCases:cases},currentToken:()=>token,pathFor,route:()=>[token],$:()=>output,head:()=>'<h1>Кабинет эксперта</h1>',profileSummary:()=>'<section>Профиль</section>',expertOverview:expertDashboard,viewOptions:()=>({}),shell:(html)=>html,fitFields:()=>{},B:(_action,label)=>label,A:(_href,label)=>label,expertList:rows=>'<section>Expert list '+rows.map(c=>c.name).join(' ')+'</section>'};
+ const context={state:{account:{role:'expert'},db:{profile:{fullName:'Эксперт'}},expertCases:cases},currentToken:()=>token,pathFor,route:()=>[token],$:()=>output,paintApp:html=>{output.innerHTML=html;},head:()=>'<h1>Кабинет эксперта</h1>',profileSummary:()=>'<section>Профиль</section>',expertOverview:expertDashboard,viewOptions:()=>({}),shell:(html)=>html,fitFields:()=>{},B:(_action,label)=>label,A:(_href,label)=>label,expertList:rows=>'<section>Expert list '+rows.map(c=>c.name).join(' ')+'</section>'};
  vm.createContext(context);vm.runInContext(extract('function expertHome()','function aiConnectionCard()'),context);
  for(const page of ['experts','overview','upload']){token=page;vm.runInContext('render()',context);assert.doesNotMatch(output.innerHTML,/Профиль/);assert.match(output.innerHTML,/Как начать работу/);assert.match(output.innerHTML,/Мои дела/);assert.match(output.innerHTML,/Запросов экспертизы/);assert.match(output.innerHTML,/Запросы экспертизы/);assert.doesNotMatch(output.innerHTML,/Входящие проверки|Реальное дело|Учебное дело/);}
  token='expert-done';vm.runInContext('render()',context);

@@ -912,3 +912,6 @@ dialog{max-height:calc(100dvh - 32px)}
 .sidebar .nav a.nav-new-check:hover{background:var(--ui-soft)}
 .sidebar .nav a.nav-new-check .nav-icon{display:block;font-size:1.5rem;line-height:1}
 .ai-methodology + .examples-explanation{margin-top:20px}
+
+/* Bring expanded navigation closer to the profile. */
+@media(min-width:769px){.shell:not(.sidebar-collapsed) .sidebar>.sidebar-person{margin-bottom:8px}.shell:not(.sidebar-collapsed) .sidebar>.nav{margin-top:4px}}

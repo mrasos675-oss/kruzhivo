@@ -1,3 +1,4 @@
+import { renderApp, renderAnalysis } from '/app-render.js';
 import { installActionHelp } from '/action-help.js';
 import { renderProvisionMap, installProvisionMap } from '/provision-map.js';
 import { documentKinds } from '/document-kinds.js';
@@ -17,6 +18,7 @@ import { dashboardFilters } from '/dashboard.js';
 import { overview, expertList, invitationForm, expertCase } from '/cabinets.js';
 import { methodologyContent, runDetailsContent, qualityContent } from '/transparency.js';
 import { currentRun, isArchived, hasSavedDecision, proposalForDecision, findingTitle, quoteContext } from '/review.mjs';
+const paintApp=html=>renderApp(document.getElementById('app'),html);
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const state = { db:null, search:'', exampleSearch:'', upload:null, draft:null, dirty:false, menu:false, sidebarCollapsed:false, busy:false, error:'', exportFile:null, exportError:'', conflict:false, preserveHash:null };
@@ -46,7 +48,7 @@ async function api(path,data,method='POST') {
   const options = data===undefined ? {} : {
     method, headers:{'Content-Type':'application/json','x-kruzhivo-client':'1'}, body:JSON.stringify(data)
   };
-  const bounded = path.startsWith('auth/') || ['bootstrap','methodology','expert-cases'].includes(path);
+  const bounded = /^runs\/[^/]+\/status$/.test(path) || path.startsWith('auth/') || ['bootstrap','methodology','expert-cases'].includes(path);
   const controller = bounded ? new AbortController() : null;
   const timer = controller && setTimeout(() => controller.abort(), 15000);
   try {
@@ -99,7 +101,8 @@ function go(token,keepDraft=false){const proceed=()=>{if(!state.account&&['login
 window.addEventListener('beforeunload',event=>{if(state.dirty){event.preventDefault();event.returnValue='';}});
 let lastRouteURL=location.href;
 function routeChanged(){if(isAccessLink()){if(!state.account){render();return;}void perform(async()=>{const action=await applyAccessLink();await refresh();render();if(action==='admin')settings();});return;}const token=currentToken();lastRouteURL=location.href;state.menu=false;
- if(state.account&&!state.db&&!['home','login','register'].includes(token)&&!pathFor(token).startsWith('/#')){
+ if(state.account&&(!state.db||['overview','documents','results','experts','expert-done','run-details'].includes(token.split('/')[0]))&&!['home','login','register'].includes(token)&&!pathFor(token).startsWith('/#')){
+   if(state.busy){render();return;}
    void perform(async()=>{await refresh();render();});
    return;
  }
@@ -235,7 +238,7 @@ function resultsPage(id) {
  ${documentActionLog(d)}</div>`,'documents','Результаты проверки',{checksNavigation:false});
 }
 
-function runningPage(x) {const {r,d}=x;return shell(`${head('Проверяем документ',meta(x))}${stepper(3)}<p class="step-caption">Шаг 3 из 3 · Анализ текста</p><div class="stack">${notice('Проверка выполняется','Результаты появятся после завершения анализа.')}<div class="card run-progress">${[['analyst','Аналитик — 12 факторов'],['reviewer','Проверяющий — поиск возражений'],['editor','Редактор — проект правки']].map(([k,n])=>`<p>${r.stages[k]==='completed'?'✓':r.stages[k]==='running'?'●':'○'} ${n} · ${esc(labels[r.stages[k]]||'Выполняется')}</p>`).join('')}</div>${notice('Окончательное решение принимает специалист','Проверка не изменяет исходный документ. Завершённые этапы сохраняются.')}<div class="actions">${A('#documents','К документам')}${A(`#run-details/${r.id}`,'Состав и ход проверки')}${B('cancel','Остановить проверку','danger',`data-run="${r.id}"`)}</div></div>${modeCaption(r)}`,'documents','Проверяем документ');}
+function runningPage(x) {const {r,d}=x;return shell(`${head('Проверяем документ',meta(x))}${stepper(3)}<p class="step-caption">Шаг 3 из 3 · Анализ текста</p><div class="stack">${notice('Проверка выполняется','Ход этой проверки обновляется каждые 30 секунд. Анализ продолжается на сервере.')}<div class="card run-progress" data-analysis-run="${r.id}">${[['analyst','Аналитик — 12 факторов'],['reviewer','Проверяющий — поиск возражений'],['editor','Редактор — проект правки']].map(([k,n])=>`<p>${r.stages[k]==='completed'?'✓':r.stages[k]==='running'?'●':'○'} ${n} · ${esc(labels[r.stages[k]]||'Выполняется')}</p>`).join('')}</div>${notice('Окончательное решение принимает специалист','Проверка не изменяет исходный документ. Завершённые этапы сохраняются.')}<div class="actions">${A('#documents','К документам')}${A(`#run-details/${r.id}`,'Состав и ход проверки')}${B('cancel','Остановить проверку','danger',`data-run="${r.id}"`)}</div></div>${modeCaption(r)}`,'documents','Проверяем документ');}
 function errorPage(x) {return shell(`${head('Проверка не завершена',meta(x))}<div class="stack">${notice(labels[x.r.status],runErrorText(x.r),'error')}${x.r.findings.length?notice('Частичные результаты сохранены',`Завершённые этапы вернули ${x.r.findings.length} замечания. Завершённые этапы можно сохранить и продолжить проверку с прерванного этапа.`):''}<div class="actions">${x.d.runs.at(-1)?.id===x.r.id?B('resume-run','Продолжить проверку','primary',`data-run="${x.r.id}"`):''}${A(`#rerun/${x.d.id}/${x.v.id}`,'Начать заново')}${A('#documents','К документам')}${A(`#report/${x.r.id}`,'Отчёт')}${A(`#run-details/${x.r.id}`,'Состав и ход проверки')}</div></div>`,'documents','Проверка не завершена');}
 function findingReviewSummaryHtml(finding) {
  const lines=findingReviewSummary(finding);
@@ -366,13 +369,13 @@ function methodologyPlaceholder(){
    ? notice('Не удалось загрузить материалы',state.methodologyError,'error')+B('retry-methodology','Повторить','compact')
    : '<p role="status" class="muted">Загружаем материалы…</p>';
 }
-function render() {if(!state.account||['home','login','register'].includes(currentToken())||pathFor(currentToken()).startsWith('/#')){const page=currentToken();$('#app').innerHTML=page==='register'?registrationPage(state.error,new URLSearchParams(location.search).get('role')==='expert'?'expert':'official'):page==='login'?loginPage(state.error,state.demoLogin):['restore','privacy','terms'].includes(page)?infoPage(page):page==='not-found'?'<main id="main-content" class="login-screen"><h1>Страница не найдена</h1><a href="/">На главную</a></main>':landingPage(state.error);return;}if(!state.db)return;
+function render() {if(!state.account||['home','login','register'].includes(currentToken())||pathFor(currentToken()).startsWith('/#')){const page=currentToken();paintApp(page==='register'?registrationPage(state.error,new URLSearchParams(location.search).get('role')==='expert'?'expert':'official'):page==='login'?loginPage(state.error,state.demoLogin):['restore','privacy','terms'].includes(page)?infoPage(page):page==='not-found'?'<main id="main-content" class="login-screen"><h1>Страница не найдена</h1><a href="/">На главную</a></main>':landingPage(state.error));return;}if(!state.db)return;
  if(needsMethodology()&&!state.methodology&&!state.methodologyRequest&&!state.methodologyError){
    void loadMethodology().then(()=>{if(state.db&&needsMethodology())render();});
  }
  if(currentToken()==='case-history'){
- $('#app').innerHTML=caseHistoryPage();return;
- }if(state.account.role==='admin'){$('#app').innerHTML=shell(head('Администрирование')+aiConnectionCard()+(state.methodology?methodologyContent(state.methodology):methodologyPlaceholder()),'methodology','Работа ИИ агентов');fitFields();return;}if(!state.db.profile?.fullName||route()[0]==='profile'){if(currentToken().startsWith('expert-invite/'))state.profileReturn=currentToken();$('#app').innerHTML=shell(profilePage(state.db.profile,state.account,state.error),'profile','Мой профиль');return;}const [page,id,n]=route();if(state.account.role==='expert'&&!['overview','experts','expert-case','expert-invite','sources','source-samples','source-materials','source-decisions','case-history','samples','methodology','materials','quality','profile','notifications','expert-done','examples','example','example-new','example-edit','example-disable','example-saved'].includes(page)){$('#app').innerHTML=expertHome();return;}const html=page==='notifications'?notificationsPage():page==='run-confirm'?runConfirmation(id,n):page==='expert-done'&&state.account.role==='expert'?expertConclusionsPage():page==='overview'&&state.account.role==='expert'?expertHome():page==='overview'?shell(head('Здравствуйте, '+(state.db.profile?.fullName?.split(' ').slice(1).join(' ')||state.account.displayName)+'!')+overview(state.db,state.expertCases||[],viewOptions()),'overview','Кабинет'):page==='experts'?(state.account.role==='expert'?expertHome():shell(head('Экспертные заключения')+expertList(state.expertCases||[],state.queueFilter||'all'),'experts','Экспертные заключения')):page==='expert-invite'?shell(head('Приглашение эксперта')+invitationForm(id,n,state.account?.displayName),'experts','Приглашение'):page==='expert-case'?expertPage(id):page==='methodology'?shell(head('Работа ИИ агентов')+aiConnectionCard()+(state.methodology?methodologyContent(state.methodology):methodologyPlaceholder())+'<section class="card stack tight examples-explanation"><h2>Новые примеры для ИИ</h2><p>Пополняемая база разобранных замечаний, которые специалист разрешил использовать как аналогии. До проверки правового основания и применимости новые примеры не используются в анализе.</p><div class="actions">'+A('#examples','Открыть')+'</div></section>','methodology','Работа ИИ агентов'):page==='source-decisions'?sourcesPage(undefined,'decisions'):page==='materials'||page==='source-materials'?sourcesPage(undefined,'materials'):page==='quality'?shell(head('Контрольные примеры')+`<div class="actions">${A('#methodology','Назад к работе ИИ агентов')}</div>`+(state.methodology?qualityContent(state.methodology.qualityCases):methodologyPlaceholder()),'methodology','Контрольные примеры'):page==='run-details'?(locate(id)?shell(head('Состав и ход проверки')+`<div class="actions">${A('#results/'+id,'Назад к результатам')}</div>`+runDetailsContent(locate(id)),'documents','Состав запуска'):missing()):page==='samples'||page==='source-samples'?sourcesPage(undefined):page==='upload'?uploadPage(false):page==='paste'?uploadPage(true):page==='version'?uploadPage(false,id):page==='version-text'?uploadPage(true,id):page==='prepare'?preparePage(id,n):page==='rerun'?preparePage(id,n,true):page==='graph'?graphPage(id):page==='provision'?provisionPage(id,n):page==='results'?resultsPage(id):page==='run'?runPage(id):page==='reject'?rejectPage():page==='history'?historyPage(id):page==='report'?reportPage(id):page==='export'?exportPage(id):page==='export-ready'?exportPage(id,true):page==='sources'?sourcesPage(id):page==='example-new'?newExamplePage():page==='examples'?examplesPage():page==='example'?examplePage(id):page==='example-edit'?examplePage(id,true):page==='example-disable'?examplePage(id,false,true):page==='save-example'?saveExamplePage(id,n):page==='example-saved'?shell(head('Пример сохранён')+notice('Запись ожидает проверки','До проверки правового основания и применимости пример не используется в анализе.')+`<div class="actions review-actions">${A('#example/'+id,'Открыть пример','primary')}${A('#examples','К примерам')}</div>`,'examples','Пример сохранён'):page==='file-error'?fileErrorPage():dashboard();$('#app').innerHTML=html;fitFields();}
+ paintApp(caseHistoryPage());return;
+ }if(state.account.role==='admin'){paintApp(shell(head('Администрирование')+aiConnectionCard()+(state.methodology?methodologyContent(state.methodology):methodologyPlaceholder()),'methodology','Работа ИИ агентов'));fitFields();return;}if(!state.db.profile?.fullName||route()[0]==='profile'){if(currentToken().startsWith('expert-invite/'))state.profileReturn=currentToken();paintApp(shell(profilePage(state.db.profile,state.account,state.error),'profile','Мой профиль'));return;}const [page,id,n]=route();if(state.account.role==='expert'&&!['overview','experts','expert-case','expert-invite','sources','source-samples','source-materials','source-decisions','case-history','samples','methodology','materials','quality','profile','notifications','expert-done','examples','example','example-new','example-edit','example-disable','example-saved'].includes(page)){paintApp(expertHome());return;}const html=page==='notifications'?notificationsPage():page==='run-confirm'?runConfirmation(id,n):page==='expert-done'&&state.account.role==='expert'?expertConclusionsPage():page==='overview'&&state.account.role==='expert'?expertHome():page==='overview'?shell(head('Здравствуйте, '+(state.db.profile?.fullName?.split(' ').slice(1).join(' ')||state.account.displayName)+'!')+overview(state.db,state.expertCases||[],viewOptions()),'overview','Кабинет'):page==='experts'?(state.account.role==='expert'?expertHome():shell(head('Экспертные заключения')+expertList(state.expertCases||[],state.queueFilter||'all'),'experts','Экспертные заключения')):page==='expert-invite'?shell(head('Приглашение эксперта')+invitationForm(id,n,state.account?.displayName),'experts','Приглашение'):page==='expert-case'?expertPage(id):page==='methodology'?shell(head('Работа ИИ агентов')+aiConnectionCard()+(state.methodology?methodologyContent(state.methodology):methodologyPlaceholder())+'<section class="card stack tight examples-explanation"><h2>Новые примеры для ИИ</h2><p>Пополняемая база разобранных замечаний, которые специалист разрешил использовать как аналогии. До проверки правового основания и применимости новые примеры не используются в анализе.</p><div class="actions">'+A('#examples','Открыть')+'</div></section>','methodology','Работа ИИ агентов'):page==='source-decisions'?sourcesPage(undefined,'decisions'):page==='materials'||page==='source-materials'?sourcesPage(undefined,'materials'):page==='quality'?shell(head('Контрольные примеры')+`<div class="actions">${A('#methodology','Назад к работе ИИ агентов')}</div>`+(state.methodology?qualityContent(state.methodology.qualityCases):methodologyPlaceholder()),'methodology','Контрольные примеры'):page==='run-details'?(locate(id)?shell(head('Состав и ход проверки')+`<div class="actions">${A('#results/'+id,'Назад к результатам')}</div>`+runDetailsContent(locate(id)),'documents','Состав запуска'):missing()):page==='samples'||page==='source-samples'?sourcesPage(undefined):page==='upload'?uploadPage(false):page==='paste'?uploadPage(true):page==='version'?uploadPage(false,id):page==='version-text'?uploadPage(true,id):page==='prepare'?preparePage(id,n):page==='rerun'?preparePage(id,n,true):page==='graph'?graphPage(id):page==='provision'?provisionPage(id,n):page==='results'?resultsPage(id):page==='run'?runPage(id):page==='reject'?rejectPage():page==='history'?historyPage(id):page==='report'?reportPage(id):page==='export'?exportPage(id):page==='export-ready'?exportPage(id,true):page==='sources'?sourcesPage(id):page==='example-new'?newExamplePage():page==='examples'?examplesPage():page==='example'?examplePage(id):page==='example-edit'?examplePage(id,true):page==='example-disable'?examplePage(id,false,true):page==='save-example'?saveExamplePage(id,n):page==='example-saved'?shell(head('Пример сохранён')+notice('Запись ожидает проверки','До проверки правового основания и применимости пример не используется в анализе.')+`<div class="actions review-actions">${A('#example/'+id,'Открыть пример','primary')}${A('#examples','К примерам')}</div>`,'examples','Пример сохранён'):page==='file-error'?fileErrorPage():dashboard();paintApp(html);fitFields();}
 function aiConnectionCard(){
  if(state.account?.role!=='admin')return '';
  const cfg=state.db.config,canManage=cfg.hosted?state.account?.role==='admin'&&cfg.canManage===true:state.account?.role==='official';
@@ -619,23 +622,25 @@ try{
  const retry=esc(location.pathname+location.search);
  $('#app').innerHTML=`<main class="loading"><h1>Не удалось открыть пространство</h1><p>${esc(error.message)}</p><a href="${retry}">Попробовать ещё раз</a> · <a href="/login">Ко входу</a></main>`;
 }
-let pollingInbox=false;
+
+
+let pollingAnalysis=false;
 setInterval(async()=>{
- const page=route()[0];
- const expert=state.account?.role==='expert';
- const showList=page==='experts'||expert&&['overview','expert-done','examples','example','example-new','example-edit','example-disable','example-saved'].includes(page);
- if(document.hidden||pollingInbox||state.busy||!state.db?.profile?.fullName||
-   !(expert?document.querySelector('[data-expert-queue-dot]'):page==='experts'))return;
+ const [page,id]=route();
+ if(page!=='results'||document.hidden||pollingAnalysis||state.busy||state.dirty||$('#modal').open||!document.querySelector('[data-analysis-run]'))return;
+ const x=locate(id);if(x?.r.status!=='running')return;
  const accountId=state.account?.id;
- pollingInbox=true;
+ pollingAnalysis=true;
  try{
-   const updated=await refreshExpertCases();
-   if(updated&&showList&&state.account?.id===accountId&&route()[0]===page&&!state.menu&&!state.busy&&!$('#modal').open&&!document.activeElement?.closest('form'))render();
- }catch{ /* The conclusions page also supports a manual refresh. */ }
- finally{pollingInbox=false;}
+  const next=await api('runs/'+encodeURIComponent(id)+'/status');
+  if(state.account?.id!==accountId||currentToken()!=='results/'+id||state.busy||state.dirty||$('#modal').open)return;
+  const current=locate(id);if(!current||current.r.status!=='running')return;
+  if(next.status===current.r.status&&JSON.stringify(next.stages)===JSON.stringify(current.r.stages)&&JSON.stringify(next.stageTimes)===JSON.stringify(current.r.stageTimes))return;
+  Object.assign(current.r,next.run||next);
+  renderAnalysis(document.getElementById('app'),resultsPage(id));
+ }catch{ /* Keep the saved screen; the next visible analysis tick can retry. */ }
+ finally{pollingAnalysis=false;}
 },30000);
-let polling=false;
-setInterval(async()=>{if(document.hidden||polling||state.busy||!state.db?.documents.some(d=>d.runs.some(r=>r.status==='running'||(state.pilotMode&&r.status==='completed'&&!r.expertCaseId&&Date.now()-Date.parse(r.finishedAt)<15000))))return;polling=true;try{await refresh();if(!state.dirty&&!$('#modal').open&&!document.activeElement?.closest('form')&&!['upload','paste','version','version-text','prepare','rerun','save-example','example-new','example-edit'].includes(route()[0]))render();}catch{}finally{polling=false;}},8000);
 
 function isAccessLink(){return /^#admin\/[A-Za-z0-9_-]{43}$/.test(location.hash)||location.hash==='#delete-personal-key';}
 async function applyAccessLink(){
