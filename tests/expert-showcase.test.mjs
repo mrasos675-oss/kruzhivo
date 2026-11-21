@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {expertShowcase} from '../public/expert-showcase.js';
+import {expertList,expertCase} from '../public/cabinets.js';
 import {createExpertReview} from '../server/expert-review.mjs';
 import {version} from '../server/store.mjs';
 
@@ -66,4 +67,25 @@ test('Concurrent pickup and retries preserve one case and reject another expert 
  db.expertCases[0].archivedAt='2026-11-21';
  await assert.rejects(one.start(c.id),e=>e.status===409);
  await assert.rejects(one.start('missing'),e=>e.status===404);
+});
+
+
+test('Status follows server assignment and pickup in showcase, my cases and case detail',async()=>{
+ const db={expertCases:[]};const store={read:async()=>structuredClone(db),change:async fn=>fn(db)};
+ const owner=createExpertReview(store,'owner'),expert=createExpertReview(store,'expert');
+ const c=await owner.create({name:'НПА'},version('Текст'),{id:'status',status:'completed',mode:'api',findings:[],sources:[]},{expertId:'expert',queued:true});
+ assert.match(expertShowcase(await expert.list()),/>Ожидает эксперта</);
+ assert.match(expertCase(await expert.get(c.id)),/>Ожидает эксперта</);
+ await expert.start(c.id);
+ for(const html of [expertShowcase(await expert.list()),expertList(await expert.list(),'reviewing'),expertCase(await expert.get(c.id))]){
+  assert.match(html,/>На рассмотрении экспертом</);
+  assert.doesNotMatch(html,/>Ожидает эксперта</);
+ }
+ await expert.save(c.id,'Заключение',0);await expert.sign(c.id,1);
+ assert.match(expertList(await expert.list()),/>Заключение готово</);
+ const invitation=await owner.create({name:'По приглашению'},version('Текст'),{id:'invited',status:'completed',mode:'api',findings:[],sources:[]});
+ assert.equal((await owner.get(invitation.id)).status,'waiting');
+ await expert.accept(invitation.id,invitation.token,{name:'Эксперт',registryNumber:'123'});
+ assert.match(expertList(await expert.list()),/>На рассмотрении экспертом</);
+ assert.equal((await owner.get(invitation.id)).status,'reviewing');
 });
