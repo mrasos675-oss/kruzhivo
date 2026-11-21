@@ -941,3 +941,8 @@ dialog{max-height:calc(100dvh - 32px)}
 .expert-catalog-filters .field{padding:0;border:0;box-shadow:none;background:transparent}
 .expert-catalog-filters input,.expert-catalog-filters select{height:42px;padding:8px 12px;border:1px solid var(--control-border,var(--border));border-radius:6px;background:#fff;line-height:24px}
 .expert-catalog-filters input:focus-visible,.expert-catalog-filters select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.expert-finding.quote-pair-active{outline:3px solid var(--primary,#2257c7);outline-offset:2px;background:#edf3ff}
+.expert-document mark.quote-pair-active{background:#ffd15c;color:#17233b;outline:2px solid #9a6200;outline-offset:1px}
+.expert-document mark[data-quote-pairs]{cursor:pointer;scroll-margin-top:100px}
+.expert-document mark[data-quote-pairs]:focus-visible{outline:3px solid #2257c7;outline-offset:2px}
+.expert-finding [data-show-quote]{margin-bottom:14px}
