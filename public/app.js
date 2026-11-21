@@ -470,7 +470,7 @@ const handlers={
    return;
  }
  modal('Запрос независимой экспертизы',`<form id="expert-assign-form" data-run="${x.r.id}" class="stack">${transferSummary}<label class="field"><span>Приглашённый эксперт</span><select name="expertAccountId">${experts.map(e=>`<option value="${esc(e.id)}">${esc(e.displayName)} · ${esc(e.username)}</option>`).join('')}<option value="">Создать персональную ссылку приглашения</option></select></label>${field('comment','Сопроводительный комментарий','',{area:true,max:3000})}<p class="muted">Регистрация аккаунта не подтверждает аккредитацию. Это демонстрация экспертного модуля этапа 3.</p><button class="btn primary" type="submit">Передать эксперту</button></form>`);},
- 'expert-start':async b=>{await api('expert-cases/'+b.dataset.case+'/start',{});await refresh();render();},
+ 'expert-start':async b=>{try{await api('expert-cases/'+b.dataset.case+'/start',{});}catch(error){if([403,404,409].includes(error.status)){await refresh();throw new Error('Дело уже недоступно. Витрина обновлена.');}throw error;}await refresh();render();},
  'expert-invite':async b=>showExpertInvitation(await api('expert-cases/'+b.dataset.case+'/invite',{})),
  'storage-recover':async()=>{const result=await api('storage/recover',{});await refresh();render();toast('Восстановлено документов: '+result.documents+', проверок: '+result.runs+'. '+result.notice);},
  'expert-refresh':async b=>{if(state.dirty){toast('Сначала сохраните черновик заключения.');return;}state.expertCase=await api('expert-cases/'+b.dataset.case);await refresh();render();},
