@@ -80,9 +80,9 @@ export function createCloudStore(workspace, master, storage = blob, { initialDb 
     async validCredential(revision) { const c=(await requireState()).credential; return !!revision && c?.revision === revision; },
     async recover(snapshot) {
       const db=snapshot||await this.read();
-      if(!db.documents.some(d=>d.runs.some(r=>r.status==='running'&&Date.now()-Date.parse(r.createdAt)>300000)))return db;
-      return this.change(db => { for (const d of db.documents) for (const r of d.runs) if (r.status === 'running' && Date.now() - Date.parse(r.createdAt) > 300000) {
-        r.status = 'failed'; r.error = 'Проверка прервана или превысила время выполнения. Частичные результаты сохранены; создайте новый запуск.'; r.finishedAt = new Date().toISOString();
+      if(!db.documents.some(d=>d.runs.some(r=>r.status==='running'&&Date.now()>(r.execution?.expiresAt||Date.parse(r.createdAt)+300000))))return db;
+      return this.change(db => { for (const d of db.documents) for (const r of d.runs) if (r.status === 'running' && Date.now() > (r.execution?.expiresAt||Date.parse(r.createdAt)+300000)) {
+        r.status = 'failed'; r.error = 'Проверка прервана или превысила время выполнения. Завершённые этапы сохранены. Можно продолжить с прерванного этапа.'; r.finishedAt = new Date().toISOString();
         for (const stage of Object.keys(r.stages)) { if (r.stages[stage] === 'running') r.stages[stage] = 'failed'; else if (r.stages[stage] === 'queued') r.stages[stage] = 'not_started'; }
       } return db; });
     },

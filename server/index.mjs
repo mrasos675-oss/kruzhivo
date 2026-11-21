@@ -1,3 +1,4 @@
+import { nextStage, resumeRun, stageLeaseMs } from './run-stages.mjs';
 import { manualExample } from './examples.mjs';
 import { reportDisposition } from './report-filename.mjs';
 import { documentKinds } from '../public/document-kinds.js';
@@ -38,7 +39,7 @@ function finishInterrupted(run, status, message) {
 }
 const json = (res, status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
 
-export async function createApp({ dataDir = process.env.DATA_DIR || join(root, 'data'), initialKey = process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '', initialModel = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-flash', initialConnection, fetcher, store: suppliedStore, originals: suppliedOriginals, hosted = false, pilotMode = false, trainingReader = false, queueExpert = null, credentials, access, schedule, origin, reviewStore, sourceLibrary, actorId = 'local-demo', account, experts = [], bootstrapState, storageInfo = null, history = null } = {}) {
+export async function createApp({ dataDir = process.env.DATA_DIR || join(root, 'data'), initialKey = process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '', initialModel = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-flash', initialConnection, fetcher, store: suppliedStore, originals: suppliedOriginals, hosted = false, pilotMode = false, trainingReader = false, queueExpert = null, credentials, access, schedule, dispatchStep, origin, reviewStore, sourceLibrary, actorId = 'local-demo', account, experts = [], bootstrapState, storageInfo = null, history = null } = {}) {
   const store = suppliedStore || await createStore(dataDir); const originals = suppliedOriginals || await createOriginals(dataDir); let apiKey = initialKey;
   const envConnection = process.env.LLM_PROVIDER ? { provider: process.env.LLM_PROVIDER, baseUrl: process.env.LLM_BASE_URL, protocol: process.env.LLM_PROTOCOL || 'chat-completions', model: process.env.LLM_MODEL || '', jsonMode: process.env.LLM_JSON_MODE !== 'false' } : null;
   let connection = normalizeConnection(initialConnection || (!hosted && envConnection) || (initialKey ? legacyConnection(initialModel) : emptyConnection()), { allowEmptyModel: true }); const jobs = new Map();
@@ -94,19 +95,32 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
 
   async function start(runId, runKey, permit) {
     const controller = new AbortController(); jobs.set(runId, controller);
-    const { r, v } = locate(await store.read(), runId); const key = runKey, selectedModel = r.model;
-    const update = async (stage, status, patch = {}) => { if (r.mode === 'api' && status === 'running' && (key !== apiKey || !sameDestination(r.connection || connection, connection) || credentials && !(await credentials.valid()))) throw fail('Подключение отключено или заменено. Проверьте настройки API.', 401); return store.change(db => { const current = locate(db, runId).r; if (current.status !== 'running') throw fail('Запуск остановлен.', 409); Object.assign(current, patch); current.stages[stage] = status; current.stageTimes ||= {}; current.stageTimes[stage] ||= {}; if (status === 'running') current.stageTimes[stage].startedAt ||= now(); else current.stageTimes[stage].finishedAt = now(); }); };
+    let lease;
+    if(dispatchStep){
+      lease=id();
+      const claimed=await store.change(db=>{const r=locate(db,runId).r;if(r.status!=='running'||r.execution?.token&&r.execution.expiresAt>Date.now())return false;r.execution={token:lease,expiresAt:Date.now()+stageLeaseMs};return true;});
+      if(!claimed){jobs.delete(runId);return;}
+    }
+    const { r, v } = structuredClone(locate(await store.read(), runId)); const key = runKey, selectedModel = r.model;
+    permit ||= r.permit;
+    let pending=false;
+    const update = async (stage, status, patch = {}) => { if (r.mode === 'api' && status === 'running' && (key !== apiKey || !sameDestination(r.connection || connection, connection) || credentials && !(await credentials.valid()))) throw fail('Подключение отключено или заменено. Проверьте настройки API.', 401); return store.change(db => { const current = locate(db, runId).r; if (current.status !== 'running'||lease&&current.execution?.token!==lease) throw fail('Запуск остановлен.', 409); Object.assign(current, patch); current.stages[stage] = status; current.stageTimes ||= {}; current.stageTimes[stage] ||= {}; if (status === 'running') current.stageTimes[stage].startedAt ||= now(); else current.stageTimes[stage].finishedAt = now(); }); };
     try {
-      const signal = hosted ? AbortSignal.any([controller.signal, AbortSignal.timeout(280000)]) : controller.signal;
+      if(permit&&credentials?.touch)await credentials.touch(permit);
+      const signal = hosted ? AbortSignal.any([controller.signal, AbortSignal.timeout(dispatchStep?210000:280000)]) : controller.signal;
       await pipeline(r, v.text, {
-        key, model: selectedModel, connection: r.connection || connection, signal, fetcher,
+        singleStage:!!dispatchStep, key, model: selectedModel, connection: r.connection || connection, signal, fetcher,
         onAttempt: hosted ? (stage, attempt) => {
           if (attempt.code || attempt.httpStatus >= 400) console.warn('kruzhivo: provider attempt failed', { runId, stage, ...attempt });
         } : undefined
       }, update);
+      if(dispatchStep&&nextStage(r)){
+        await store.change(db=>{const current=locate(db,runId).r;if(current.status!=='running'||current.execution?.token!==lease)throw fail('Запуск остановлен.',409);current.execution={token:null,expiresAt:Date.now()+90000};});
+        await dispatchStep(runId);pending=true;return;
+      }
       const completed = await store.change(db => {
         const { d, r: current, v } = locate(db, runId);
-        if (current.status !== 'running') return null;
+        if (current.status !== 'running'||lease&&current.execution?.token!==lease) return null;
         current.status = 'completed';
         current.finishedAt = now();
         return { d, r: current, v };
@@ -116,8 +130,8 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
         catch { console.error('kruzhivo: completed run could not confirm delivery to the expert queue'); }
       }
     }
-    catch (e) { await store.change(db => { const x = locate(db, runId).r; if (x.status === 'running') { finishInterrupted(x, 'failed', e.status ? e.message : e.name === 'TimeoutError' ? 'Превышено время ожидания модели. Создайте новый запуск.' : 'Проверка прервана. Сохранены результаты завершённых этапов.'); } }); }
-    finally { jobs.delete(runId); if(permit)await credentials.release(permit); await saveRunResult(runId); }
+    catch (e) { await store.change(db => { const x = locate(db, runId).r; if (x.status === 'running'&&(!lease||x.execution?.token===lease||x.execution?.token===null)) { finishInterrupted(x, 'failed', e.name === 'TimeoutError' ? 'Превышено время ожидания этапа. Завершённые этапы сохранены; можно продолжить проверку.' : e.status ? e.message : 'Проверка прервана. Завершённые этапы сохранены; можно продолжить проверку.'); } }); }
+    finally { jobs.delete(runId); if(permit&&!pending&&(locate(await store.read(),runId).r.status!=='running'))await credentials.release(permit); if(!pending)await saveRunResult(runId); }
   }
   const canEditSources=()=>account?account.role==='expert':!hosted||access?.canManage===true;
   const availableSources=async(workspace)=>{
@@ -252,9 +266,29 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
         const sourceSnapshot=await availableSources();
         const permit=b.mode==='api'&&credentials?.reserve?await credentials.reserve():null;
         let r;try{r = await store.change(db => { const d = findDoc(db, m[1]); if (d.runs.some(x => x.status === 'running')) throw fail('Для этого документа уже выполняется проверка.', 409); const v = d.versions.find(x => x.id === b.versionId); if (!v) throw fail('Версия не найдена.', 404); if (b.mode === 'demo') demoAnalysisCheck(v.text); const r = newRun(d, v, b.mode, sourceSnapshot, db.examples, runConnection.model); r.authorSnapshot=db.profile?Object.fromEntries(['fullName','organization','department','position'].map(k=>[k,db.profile[k]||''])):null; if (b.mode === 'api') { r.connection = runConnection; r.aiPolicy = policySnapshot(runConnection); r.aiPolicy.snapshotOrigin = 'captured_at_creation'; } d.runs.push(r); return r; });}catch(error){if(permit)await credentials.release(permit);throw error;}
+        if(dispatchStep)await store.change(db=>{const current=locate(db,r.id).r;current.orchestration='staged-v1';current.permit=permit;current.execution={token:null,expiresAt:Date.now()+90000};});
         await saveSubmission(r.id);
         if (history && schedule) schedule(publishHistory(r.id));
         if (schedule) schedule(start(r.id, runKey, permit)); else setImmediate(() => void start(r.id, runKey, permit)); return json(res, 202, { id: r.id });
+      }
+      m = p.match(/^\/api\/runs\/([^/]+)\/(advance|resume)$/);
+      if(req.method==='POST'&&m){
+        const runId=m[1];
+        if(m[2]==='advance'){
+          const {r}=locate(await store.read(),runId);
+          if(!dispatchStep||r.orchestration!=='staged-v1')throw fail('Этот запуск не поддерживает поэтапное выполнение.',409);
+          if(r.status!=='running')return json(res,200,{status:r.status});
+          if(schedule)schedule(start(runId,apiKey,r.permit));else setImmediate(()=>void start(runId,apiKey,r.permit));
+          return json(res,202,{id:runId});
+        }
+        const previous=locate(await store.read(),runId).r;
+        if(previous.mode==='api'&&(!apiKey||!sameDestination(previous.connection||connection,connection)))throw fail('Для продолжения нужно прежнее API-подключение и модель.',409);
+        const permit=previous.mode==='api'&&credentials?.reserve?await credentials.reserve():null;
+        let resumed;
+        try{resumed=await store.change(db=>{const {d,r,v}=locate(db,runId);if(d.runs.some(x=>x.status==='running'))throw fail('Для документа уже идёт проверка.',409);const next=resumeRun(d,r,v);if(dispatchStep){next.orchestration='staged-v1';next.permit=permit;next.execution={token:null,expiresAt:Date.now()+90000};}d.runs.push(next);return next;});}catch(error){if(permit)await credentials.release(permit);throw error;}
+        await saveSubmission(resumed.id);
+        if(schedule)schedule(start(resumed.id,apiKey,permit));else setImmediate(()=>void start(resumed.id,apiKey,permit));
+        return json(res,202,{id:resumed.id});
       }
       m = p.match(/^\/api\/runs\/([^/]+)\/cancel$/);
       if (req.method === 'POST' && m) { jobs.get(m[1])?.abort(); await store.change(db => { const r = locate(db, m[1]).r; if (r.status !== 'running') throw fail('Этот запуск уже завершён.', 409); finishInterrupted(r, 'cancelled', 'Запуск остановлен специалистом. Завершённые этапы сохранены.'); }); return json(res, 200, { ok: true }); }

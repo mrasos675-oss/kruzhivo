@@ -1,3 +1,4 @@
+import { createRunDispatcher } from '../server/run-dispatch.mjs';
 import { createGithubHistory } from '../server/github-history.mjs';
 import { createGithubStorage } from '../server/github-store.mjs';
 import { recoverGithubHistory } from '../server/github-recovery.mjs';
@@ -11,7 +12,7 @@ import { createCloudStore } from '../server/cloud-store.mjs';
 import { createSharedConnection } from '../server/shared-connection.mjs';
 import { sessionFromCookie, newSession, checkOrigin, isAdmin, validAdminToken, adminCookie } from '../server/cloud-security.mjs';
 
-export function createHostedHandler({getMaster=()=>process.env.KRUZHIVO_SESSION_SECRET,getAdminToken=()=>process.env.KRUZHIVO_ADMIN_TOKEN,storage,fetcher,pilotMode=false,getAccounts=()=>process.env.KRUZHIVO_ACCOUNTS,getAdminAccount=()=>process.env.KRUZHIVO_ADMIN_ACCOUNT,getDemoLogin=()=>process.env.KRUZHIVO_DEMO_LOGIN==='1',authRequired=true,schedule=promise=>waitUntil(promise.catch(()=>console.error('kruzhivo: background job failed')))}={}) {
+export function createHostedHandler({getDispatcher=createRunDispatcher,getMaster=()=>process.env.KRUZHIVO_SESSION_SECRET,getAdminToken=()=>process.env.KRUZHIVO_ADMIN_TOKEN,storage,fetcher,pilotMode=false,getAccounts=()=>process.env.KRUZHIVO_ACCOUNTS,getAdminAccount=()=>process.env.KRUZHIVO_ADMIN_ACCOUNT,getDemoLogin=()=>process.env.KRUZHIVO_DEMO_LOGIN==='1',authRequired=true,schedule=promise=>waitUntil(promise.catch(()=>console.error('kruzhivo: background job failed')))}={}) {
 return async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -103,8 +104,8 @@ return async function handler(req, res) {
         if(shared) {if(!canManage)throw Object.assign(new Error('Изменять общий ключ может только владелец подключения.'),{status:403});await shared.set(key,connection);if(!key)await store.setCredential('',personal.model,personal.connection);return;}
         return store.setCredential(key,model,connection);
       }, valid: () => usesShared?shared.valid(credential.revision):store.validCredential(credential.revision),
-        ...(usesShared?{reserve:()=>shared.reserve(credential.revision),release:token=>shared.release(token)}:{}) },
-      schedule, history: pilotMode ? createGithubHistory(process.env.KRUZHIVO_GITHUB_TOKEN, storage) : null,
+        ...(usesShared?{reserve:()=>shared.reserve(credential.revision),touch:token=>shared.touch(token,credential.revision),release:token=>shared.release(token)}:{}) },
+      dispatchStep:getDispatcher(req), schedule, history: pilotMode ? createGithubHistory(process.env.KRUZHIVO_GITHUB_TOKEN, storage) : null,
     });
     await app.handler(req, res);
   } catch (e) {

@@ -194,7 +194,7 @@ export async function requestProvider(connection, key, system, payload, { fetche
     throw fail(response.status >= 300 && response.status < 400 ? 'API вернул перенаправление. Укажите конечный адрес сервиса.' : errors[response.status] || 'API временно недоступен. Предыдущие результаты сохранены.', 502);
   }
   if (request.body.stream && response.headers.get('content-type')?.includes('text/event-stream')) {
-    return { ...await streamedCompletion(response), connection: c };
+    try{return { ...await streamedCompletion(response), connection: c };}catch(error){signal?.throwIfAborted();throw error;}
   }
   const data = await responseJson(response);
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw fail('Провайдер вернул некорректную структуру ответа.', 502);

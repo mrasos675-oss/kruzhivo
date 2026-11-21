@@ -236,7 +236,7 @@ function resultsPage(id) {
 }
 
 function runningPage(x) {const {r,d}=x;return shell(`${head('Проверяем документ',meta(x))}${stepper(3)}<p class="step-caption">Шаг 3 из 3 · Анализ текста</p><div class="stack">${notice('Проверка выполняется','Результаты появятся после завершения анализа.')}<div class="card run-progress">${[['analyst','Аналитик — 12 факторов'],['reviewer','Проверяющий — поиск возражений'],['editor','Редактор — проект правки']].map(([k,n])=>`<p>${r.stages[k]==='completed'?'✓':r.stages[k]==='running'?'●':'○'} ${n} · ${esc(labels[r.stages[k]]||'Выполняется')}</p>`).join('')}</div>${notice('Окончательное решение принимает специалист','Проверка не изменяет исходный документ. Завершённые этапы сохраняются.')}<div class="actions">${A('#documents','К документам')}${A(`#run-details/${r.id}`,'Состав и ход проверки')}${B('cancel','Остановить проверку','danger',`data-run="${r.id}"`)}</div></div>${modeCaption(r)}`,'documents','Проверяем документ');}
-function errorPage(x) {return shell(`${head('Проверка не завершена',meta(x))}<div class="stack">${notice(labels[x.r.status],runErrorText(x.r),'error')}${x.r.findings.length?notice('Частичные результаты сохранены',`Завершённые этапы вернули ${x.r.findings.length} замечания. Решение можно будет принять в новом успешно завершённом запуске.`):''}<div class="actions">${A(`#rerun/${x.d.id}/${x.v.id}`,'Повторить запуск','primary')}${A('#documents','К документам')}${A(`#report/${x.r.id}`,'Отчёт')}${A(`#run-details/${x.r.id}`,'Состав и ход проверки')}</div></div>`,'documents','Проверка не завершена');}
+function errorPage(x) {return shell(`${head('Проверка не завершена',meta(x))}<div class="stack">${notice(labels[x.r.status],runErrorText(x.r),'error')}${x.r.findings.length?notice('Частичные результаты сохранены',`Завершённые этапы вернули ${x.r.findings.length} замечания. Завершённые этапы можно сохранить и продолжить проверку с прерванного этапа.`):''}<div class="actions">${x.d.runs.at(-1)?.id===x.r.id?B('resume-run','Продолжить проверку','primary',`data-run="${x.r.id}"`):''}${A(`#rerun/${x.d.id}/${x.v.id}`,'Начать заново')}${A('#documents','К документам')}${A(`#report/${x.r.id}`,'Отчёт')}${A(`#run-details/${x.r.id}`,'Состав и ход проверки')}</div></div>`,'documents','Проверка не завершена');}
 function findingReviewSummaryHtml(finding) {
  const lines=findingReviewSummary(finding);
  return lines.length ? `<section class="card" aria-label="Итоги перепроверки">${lines.map(([label,value])=>`<p><strong>${esc(label)}</strong> · ${esc(value)}</p>`).join('')}</section>` : '';
@@ -491,6 +491,7 @@ const handlers={
  'example-start':()=>{if(state.dirty)throw Error('Сначала сохраните решение.');const x=target();go(`save-example/${x.r.id}/${x.index}`);},
  'example-from-report':b=>{const x=locate(b.dataset.run);const i=x.r.findings.findIndex(f=>f.id===b.dataset.finding);go(`save-example/${x.r.id}/${i}`);},
  'export-file':b=>exportFile(b.dataset.run),
+ 'resume-run':async b=>{const result=await api('runs/'+b.dataset.run+'/resume',{});await refresh();go('results/'+result.id);toast('Проверка продолжена с прерванного этапа.');},
  cancel:async b=>{await api(`runs/${b.dataset.run}/cancel`,{});await refresh();render();},
  'source-new':()=>sourceForm(),
  'source-edit':b=>sourceForm(state.db.sources.find(s=>s.id===b.dataset.source)),

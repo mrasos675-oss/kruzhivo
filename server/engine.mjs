@@ -128,13 +128,14 @@ export async function completion(system, payload, options) {
 }
 
 
-export async function pipeline(run, text, options, update) {
+export async function pipeline(run, text, options, persist) {
+  const update=async(stage,status,patch={})=>{await persist(stage,status,patch);Object.assign(run,patch);run.stages[stage]=status;};
   const demo = run.mode === 'demo';
   if (!demo) {
     const connection = normalizeConnection(options.connection || legacyConnection(options.model));
     run.aiPolicy ||= { ...policySnapshot(connection), snapshotOrigin: 'captured_at_execution' };
-    run.aiInputs = [];
-    run.aiTrace = [];
+    run.aiInputs ||= [];
+    run.aiTrace ||= [];
   }
   const requestOptions = stage => ({ ...options, onAttempt: attempt => options.onAttempt?.(stage, attempt), onResponse: async response => {
     run.aiTrace.push({ stage, promptVersion: run.aiPolicy.version, ...response });
@@ -152,6 +153,7 @@ export async function pipeline(run, text, options, update) {
     options.signal.throwIfAborted(); await update(stage, 'running', !demo && stage === 'analyst' ? { aiPolicy: run.aiPolicy, aiTrace: run.aiTrace } : {});
     const result = await fn(); options.signal.throwIfAborted(); return result;
   };
+  if(run.stages.analyst!=='completed'){
   const analysis = await step('analyst', async () => {
     if (demo) { const a = demoAnalysis(text); return { ...a, findings: a.findings.map(f => ({ ...f, decision: decision() })) }; }
     return validateAnalysis(await call('analyst', { ...context, document: text, catalog: policy.catalog || CATALOG, sources: run.sources, examples: run.examples }), text, run.sources);
@@ -160,10 +162,16 @@ export async function pipeline(run, text, options, update) {
   run.provisionGraph = buildProvisionGraph(text,run.findings);
   run.limitations = [...new Set([...run.limitations, ...analysis.limitations])];
   await update('analyst', 'completed', { findings: run.findings, provisionGraph: run.provisionGraph, coverage: run.coverage, limitations: run.limitations });
+  if(options.singleStage&&run.findings.length)return run;
+  }
   if (!run.findings.length) { await update('reviewer', 'skipped'); await update('editor', 'skipped'); return run; }
+  if(run.stages.reviewer!=='completed'){
   const reviews = await step('reviewer', async () => demo ? demoReview(run.findings) : validateReviews((await call('reviewer', { ...context, document: text, findings: run.findings, sources: run.sources })).reviews, run.findings, text, run.sources));
   run.findings = run.findings.map(f => ({ ...f, review: reviews.find(r => r.findingId === f.id) }));
   await update('reviewer', 'completed', { findings: run.findings });
+  if(options.singleStage)return run;
+  }
+  if(['completed','skipped'].includes(run.stages.editor))return run;
   const eligible = run.findings.filter(f => !f.review.evidenceRejected && (demo ? f.review.verdict === 'supported' : f.review.verdict !== 'contested'));
   const edits = eligible.length ? await step('editor', async () => demo ? demoEdit(run.findings).map(e => ({ ...e, status: 'prepared' })) : validateEdits((await call('editor', { ...context, document: text, findings: eligible, sources: run.sources })).edits, eligible)) : [];
   run.findings = run.findings.map(f => ({

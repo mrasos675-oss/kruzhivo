@@ -50,10 +50,13 @@ export function createSharedConnection(master, storage=blob) {
         const c=credential(state),time=Date.now();
         if(!c.key||c.revision!==revision)throw fail('Общее подключение изменено. Обновите страницу.',409);
         state.usage=(state.usage||[]).filter(x=>time-x.at<3600000);
-        if(state.usage.some(x=>!x.finished&&time-x.at<300000))throw fail('Общий API сейчас выполняет проверку. Дождитесь её завершения.',429);
+        if(state.usage.some(x=>!x.finished&&time-(x.heartbeatAt||x.at)<300000))throw fail('Общий API сейчас выполняет проверку. Дождитесь её завершения.',429);
         if(state.usage.length>=8)throw fail('Лимит общей демки — 8 запусков API в час. Повторите позже.',429);
         const token=randomUUID();state.usage.push({token,at:time,finished:false});return token;
       });
+    },
+    async touch(token,revision) {
+      return mutate(state=>{const c=credential(state),lease=state.usage?.find(x=>x.token===token);if(!c.key||c.revision!==revision||!lease||lease.finished)throw fail('Подключение или разрешение на запуск изменено.',409);lease.heartbeatAt=Date.now();});
     },
     async release(token) { if(token)await mutate(state=>{const lease=state.usage?.find(x=>x.token===token);if(lease)lease.finished=true;}); },
   };
