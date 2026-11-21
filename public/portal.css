@@ -912,3 +912,13 @@ dialog{max-height:calc(100dvh - 32px)}
 
 /* Bring expanded navigation closer to the profile. */
 @media(min-width:769px){.shell:not(.sidebar-collapsed) .sidebar>.sidebar-person{margin-bottom:8px}.shell:not(.sidebar-collapsed) .sidebar>.nav{margin-top:4px}}
+
+/* Card 03: branding shares the cabinet header height. */
+@media(min-width:769px){
+ .shell{--workspace-header-height:64px}
+ .shell .topbar{min-height:var(--workspace-header-height)}
+ .shell:not(.sidebar-collapsed) .sidebar{padding-top:0}
+ .shell:not(.sidebar-collapsed) .sidebar>.brand{height:var(--workspace-header-height);display:flex;flex-direction:column;justify-content:center;padding-right:44px;line-height:1.2}
+ .shell:not(.sidebar-collapsed) .sidebar>.brand .brand-caption{margin:3px -44px 0 0;font-size:.625rem;line-height:1.4;white-space:nowrap}
+ .shell:not(.sidebar-collapsed) .sidebar>.sidebar-toggle{top:12px}
+}
