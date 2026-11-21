@@ -83,5 +83,6 @@ export function createExpertReview(store,actor,{trainingReader=false}={}) {
 export function expertDocx(c,number){
   const d=c.conclusions.find(x=>x.number===number&&x.status==='confirmed');if(!d)throw fail('Подтверждённое заключение не найдено.',404);
   const rows=['Заключение эксперта',c.document.name+' · версия документа '+c.document.number,'Версия заключения '+d.number,d.text,'Подтверждено в системе: '+moscowTime(d.confirmedAt),'Эксперт: '+d.confirmation.expert.name,'Заявленные реквизиты: '+d.confirmation.expert.registryNumber,'Аккредитация и личность автоматически не проверены. Подтверждение внутри системы; файл не содержит квалифицированной электронной подписи.',...(c.run.mode==='demo'?['Демонстрационный документ.']:[]),'SHA-256 документа: '+d.confirmation.documentHash,'SHA-256 заключения: '+d.confirmation.textHash];
-  return zipFiles(wordReport(rows,{title:'Заключение независимого эксперта',skip:3,metadata:[['Документ',c.document.name],['Версия документа',String(c.document.number)],['Версия заключения',String(d.number)],['Эксперт',d.confirmation.expert.name],['Дата подтверждения',moscowTime(d.confirmedAt)]]}));
+  return zipFiles(wordReport(rows,{title:'Заключение независимого эксперта',skip:3,metadata:[['Документ',c.document.name],['Версия документа',String(c.document.number)],['Версия заключения',String(d.number)],['Автор-госслужащий',c.requestedBy||'Не указан'],['Эксперт',d.confirmation.expert.name],['Дата подтверждения',moscowTime(d.confirmedAt)]]}));
 }
+

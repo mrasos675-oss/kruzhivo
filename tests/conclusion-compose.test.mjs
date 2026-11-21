@@ -11,3 +11,12 @@ test('Reforming replaces legacy duplicate outcomes and preserves expert decision
  assert.ok(!text.includes('Старый вывод'));assert.ok(!text.includes('Дубликат'));
  assert.equal(composeConclusion(text,'Новый вывод','Новые рекомендации'),text);
 });
+
+test('Header precedes ordered sections and is stable when reforming',()=>{
+ const c={document:{name:'Тестовый НПА',number:3},requestedBy:'Автор',expertProfile:{name:'Эксперт'}};
+ const text=composeConclusion('СОБСТВЕННЫЕ ЗАМЕЧАНИЯ\nОценка\n\nРАССМОТРЕНИЕ ЗАМЕЧАНИЙ\nЗамечание 1 — Подтверждено','Вывод','Совет',c);
+ assert.ok(text.startsWith('НПА: Тестовый НПА\nВерсия НПА: 3\nАвтор-госслужащий: Автор\nЭксперт: Эксперт\n'));
+ assert.ok(text.indexOf('РАССМОТРЕНИЕ')<text.indexOf('СОБСТВЕННЫЕ'));
+ assert.ok(text.indexOf('СОБСТВЕННЫЕ')<text.indexOf('ВЫВОД ЭКСПЕРТА'));
+ assert.equal(composeConclusion(text,'Вывод','Совет',c),text);
+});
