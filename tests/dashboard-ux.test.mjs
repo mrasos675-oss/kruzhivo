@@ -40,3 +40,32 @@ test('Word report contains styles, readable summary, exact quotes, decisions and
 test('Review navigation has explicit return routes and writing fields expand without internal scrolling',async()=>{
  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),css=await readFile(new URL('../public/style.css',import.meta.url),'utf8');assert.match(app,/Назад к списку замечаний/);assert.match(app,/Назад к проверке/);assert.ok(!app.includes('Рабочее пространство /'));assert.match(app,/area.scrollHeight/);assert.match(css,/textarea\{resize:none;overflow-y:hidden/);assert.match(app,/source-samples/);assert.match(app,/Пример для ИИ/);
 });
+
+
+test('Expert statistics count own conclusions by confirmation date and preserve earlier conclusions while revising',()=>{
+ const options={period:'custom',from:'2026-11-20',to:'2026-11-21'};
+ const cases=[
+  {role:'expert',createdAt:'2025-01-01',confirmedAt:'2026-11-20T12:00:00Z',status:'confirmed'},
+  {role:'expert',createdAt:'2025-01-01',confirmedAt:'2026-11-21T12:00:00Z',status:'reviewing'},
+  {role:'expert',createdAt:'2026-11-20',confirmedAt:'2025-01-01',status:'confirmed'},
+  {role:'official',createdAt:'2026-11-20',confirmedAt:'2026-11-20',status:'confirmed'},
+  {role:'expert',isDemo:true,createdAt:'2026-11-20',confirmedAt:'2026-11-20',status:'confirmed'},
+  {role:'expert',createdAt:'2026-11-20',status:'waiting'}
+ ];
+ const html=expertDashboard(cases,options);
+ assert.match(html,/id="my-conclusions-title">Мои заключения/);
+ assert.match(html,/<strong>2<\/strong><span>заключений/);
+ assert.match(html,/Мои заключения по неделям/);
+ assert.match(html,/Количество подготовленных заключений, шт./);
+ assert.match(html,/Запросов экспертизы<\/p><strong>2<\/strong>/);
+ assert.match(html,/role="img" aria-label="[^"]*заключений/);
+});
+
+test('Expert statistics have a separate route after My cases in navigation',async()=>{
+ const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+ assert.match(app,/\['expert-done','Мои дела'\],\['expert-statistics','Моя статистика'\],\['methodology'/);
+ assert.match(app,/page==='expert-statistics'&&state.account.role==='expert'/);
+ const {pathFor,tokenFor}=await import('../public/portal-router.js');
+ assert.equal(pathFor('expert-statistics'),'/expert/statistics');
+ assert.equal(tokenFor('/expert/statistics'),'expert-statistics');
+});
