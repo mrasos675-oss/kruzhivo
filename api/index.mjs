@@ -1,3 +1,4 @@
+import { createRedisAuthStore } from '../server/auth-redis.mjs';
 import { createRunDispatcher } from '../server/run-dispatch.mjs';
 import { createGithubHistory } from '../server/github-history.mjs';
 import { createGithubStorage } from '../server/github-store.mjs';
@@ -12,7 +13,7 @@ import { createCloudStore } from '../server/cloud-store.mjs';
 import { createSharedConnection } from '../server/shared-connection.mjs';
 import { sessionFromCookie, newSession, checkOrigin, isAdmin, validAdminToken, adminCookie } from '../server/cloud-security.mjs';
 
-export function createHostedHandler({getDispatcher=createRunDispatcher,getMaster=()=>process.env.KRUZHIVO_SESSION_SECRET,getAdminToken=()=>process.env.KRUZHIVO_ADMIN_TOKEN,storage,fetcher,pilotMode=false,getAccounts=()=>process.env.KRUZHIVO_ACCOUNTS,getAdminAccount=()=>process.env.KRUZHIVO_ADMIN_ACCOUNT,getDemoLogin=()=>process.env.KRUZHIVO_DEMO_LOGIN==='1',authRequired=true,schedule=promise=>waitUntil(promise.catch(()=>console.error('kruzhivo: background job failed')))}={}) {
+export function createHostedHandler({getDispatcher=createRunDispatcher,getMaster=()=>process.env.KRUZHIVO_SESSION_SECRET,getAdminToken=()=>process.env.KRUZHIVO_ADMIN_TOKEN,storage,fetcher,pilotMode=false,getAccounts=()=>process.env.KRUZHIVO_ACCOUNTS,getAdminAccount=()=>process.env.KRUZHIVO_ADMIN_ACCOUNT,getDemoLogin=()=>process.env.KRUZHIVO_DEMO_LOGIN==='1',authRequired=true,getRedisAuth=()=>null,schedule=promise=>waitUntil(promise.catch(()=>console.error('kruzhivo: background job failed')))}={}) {
 return async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -23,7 +24,7 @@ return async function handler(req, res) {
     const path=req.url.split('?')[0],demoLogin=getDemoLogin()===true;
     const accounts=[...parseAccounts(getAccounts()),...parseAccounts(getAdminAccount())];
     const auth=authRequired?createAccountAuth(master,accounts,storage,{
-      demoEnabled:demoLogin,
+      redis:getRedisAuth(),demoEnabled:demoLogin,
       ...(pilotMode?{demoAccount:(rows,role)=>rows.find(a=>a.role===role&&(role==='admin'||demoProfileFor(a)))}:{})
     }):null;
     const authJson=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});return res.end(JSON.stringify(data));};
@@ -118,4 +119,4 @@ return async function handler(req, res) {
 
 }
 const runtimeStorage=createGithubStorage({token:process.env.KRUZHIVO_GITHUB_TOKEN,master:process.env.KRUZHIVO_SESSION_SECRET});
-export default createHostedHandler({pilotMode:true,storage:runtimeStorage});
+export default createHostedHandler({pilotMode:true,storage:runtimeStorage,getRedisAuth:()=>createRedisAuthStore()});

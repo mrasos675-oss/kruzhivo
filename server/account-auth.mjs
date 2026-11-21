@@ -6,6 +6,8 @@ import { fail } from './files.mjs';
 const scrypt=promisify(derive);
 const COOKIE='__Host-kruzhivo-account';
 const seconds=7*86400;
+const gitToken = /^[\w-]{43}$/;
+const redisToken = /^r1\.[\w-]{43}$/;
 const readOptions={access:'private',useCache:false};
 const writeOptions={access:'private',addRandomSuffix:false,contentType:'application/json',cacheControlMaxAge:0};
 const digest=value=>createHash('sha256').update(value).digest('hex');
@@ -18,13 +20,15 @@ export function parseAccounts(value){
   for(const a of rows){if(!a||typeof a.id!=='string'||!/^[a-zA-Z0-9_-]{1,80}$/.test(a.id)||typeof a.username!=='string'||!/^[a-z0-9._-]{1,64}$/.test(a.username)||!['official','expert','admin'].includes(a.role)||typeof a.displayName!=='string'||a.displayName.length>200||!/^[a-f0-9]{32,128}$/.test(a.salt||'')||!/^[a-f0-9]{64}$/.test(a.passwordHash||'')||ids.has(a.id)||names.has(a.username))throw fail('Вход временно недоступен.',503);ids.add(a.id);names.add(a.username);}
   return rows;
 }
-export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=false,demoAccount=(rows,role)=>rows.find(a=>a.role===role)}={}){
+export function createAccountAuth(master,accounts,storage=blob,{redis=null,demoEnabled=false,demoAccount=(rows,role)=>rows.find(a=>a.role===role)}={}){
  const rows=parseAccounts(accounts),tokenFrom=header=>header?.split(';').map(s=>s.trim()).find(s=>s.startsWith(COOKIE+'='))?.slice(COOKIE.length+1);
  const path=token=>'auth/sessions/'+createHmac('sha256',master).update(token).digest('hex')+'.json';
+ const attemptPath=ip=>'auth/attempts/'+createHmac('sha256',master).update(ip).digest('hex')+'.json';
  const stamp=a=>digest(JSON.stringify(a));
  async function read(p){const r=await storage.get(p,readOptions);if(!r||r.statusCode===404)return null;if(r.statusCode!==200)throw fail('Сервис входа временно недоступен.',503);return JSON.parse(await new Response(r.stream).text());}
  async function throttle(ip,sessionChanges=[]){
-  const p='auth/attempts/'+createHmac('sha256',master).update(ip).digest('hex')+'.json';
+  const p=attemptPath(ip);
+  if(redis)return redis.recordAttempt(p);
   for(let i=0;i<5;i++){
    let meta,fresh;
    if(storage.kind==='github'){
@@ -52,26 +56,42 @@ export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=fals
  const registryPath='auth/registered-accounts-v1.json';
  async function allAccounts(){const saved=await read(registryPath);return [...rows,...parseAccounts(saved?.accounts||[]).filter(a=>!rows.some(e=>e.id===a.id||e.username===a.username))];}
  function prepareSession(a,header,demo){
-   const old=tokenFrom(header);
-   const token=randomBytes(32).toString('base64url'),expiresAt=Date.now()+seconds*1000;
-   const changes=[{path:path(token),bytes:JSON.stringify({accountId:a.id,stamp:stamp(a),expiresAt,demo}),options:{...writeOptions,ttlDays:7,allowOverwrite:false}}];
-   if(/^[\w-]{43}$/.test(old||''))changes.unshift({path:path(old),remove:true});
-   return {changes,signed:{user:publicAccount(a),cookie:`${COOKIE}=${token}; Path=/; Max-Age=${seconds}; Secure; HttpOnly; SameSite=Strict`}};
+  const old=tokenFrom(header);
+  const token=(redis?'r1.':'')+randomBytes(32).toString('base64url');
+  const expiresAt=Date.now()+seconds*1000;
+  const session={path:path(token),bytes:JSON.stringify({accountId:a.id,stamp:stamp(a),expiresAt,demo}),ttl:seconds};
+  if(redisToken.test(old||''))session.previousPath=path(old);
+  const changes=[{path:session.path,bytes:session.bytes,options:{...writeOptions,ttlDays:7,allowOverwrite:false}}];
+  if(!redis&&gitToken.test(old||''))changes.unshift({path:path(old),remove:true});
+  const signed={user:publicAccount(a),cookie:`${COOKIE}=${token}; Path=/; Max-Age=${seconds}; Secure; HttpOnly; SameSite=Strict`};
+  return {old,session,changes,signed};
+ }
+ async function revokeLegacy(old){
+  if(gitToken.test(old||''))await storage.del(path(old));
  }
  async function issueSession(a,header,demo=false){
-   const {changes,signed}=prepareSession(a,header,demo);
-   if(changes.length>1&&storage.putMany)await storage.putMany(changes);
-   else for(const change of changes){
-    if(change.remove)await storage.del(change.path);
-    else await storage.put(change.path,change.bytes,change.options);
-   }
-   return signed;
+  const {old,session,changes,signed}=prepareSession(a,header,demo);
+  if(redis){
+   await revokeLegacy(old);
+   await redis.issue(session);
+  }else if(changes.length>1&&storage.putMany)await storage.putMany(changes);
+  else for(const change of changes){
+   if(change.remove)await storage.del(change.path);
+   else await storage.put(change.path,change.bytes,change.options);
+  }
+  return signed;
  }
  return {
   async listAccounts(){return (await allAccounts()).map(publicAccount);},
   async register(){throw fail('Регистрация недоступна.',403);},
   accounts:rows.map(publicAccount),
-  async current(header){const token=tokenFrom(header);if(!/^[\w-]{43}$/.test(token||''))return null;const s=await read(path(token));if(!s||s.expiresAt<=Date.now()||s.demo&&!demoEnabled)return null;const account=rows.find(a=>a.id===s.accountId)||(await allAccounts()).find(a=>a.id===s.accountId);return account&&s.stamp===stamp(account)?publicAccount(account):null;},
+  async current(header){
+   const token=tokenFrom(header)||'';
+   const session=redisToken.test(token)?await redis?.read(path(token)):gitToken.test(token)?await read(path(token)):null;
+   if(!session||session.expiresAt<=Date.now()||session.demo&&!demoEnabled)return null;
+   const account=rows.find(a=>a.id===session.accountId)||(await allAccounts()).find(a=>a.id===session.accountId);
+   return account&&session.stamp===stamp(account)?publicAccount(account):null;
+  },
   async login(username,password,ip,header){
    const available=await allAccounts();if(!available.length)throw fail('Учётные записи ещё не настроены.',503);
    const name=typeof username==='string'?username.trim().toLowerCase():'';
@@ -85,6 +105,12 @@ export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=fals
    if(!demoEnabled)throw fail('Демонстрационный вход отключён.',403);
    if(!['official','expert','admin'].includes(role))throw fail('Выберите роль для входа.',400);
    const a=demoAccount(rows,role);if(!a)throw fail('Демо-аккаунт этой роли не настроен.',503);
+   if(redis){
+    const {old,session,signed}=prepareSession(a,header,true);
+    await redis.recordAttempt(attemptPath('demo:'+ip),session);
+    await revokeLegacy(old);
+    return signed;
+   }
    if(storage.putMany){
     const {changes,signed}=prepareSession(a,header,true);
     await throttle('demo:'+ip,changes);
@@ -93,7 +119,12 @@ export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=fals
    await throttle('demo:'+ip);
    return issueSession(a,header,true);
   },
-  async logout(header){const token=tokenFrom(header);if(/^[\w-]{43}$/.test(token||''))await storage.del(path(token));return `${COOKIE}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict`;},
+  async logout(header){
+   const token=tokenFrom(header)||'';
+   if(redisToken.test(token))await redis?.revoke(path(token));
+   else await revokeLegacy(token);
+   return `${COOKIE}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict`;
+  },
  };
 }
 
