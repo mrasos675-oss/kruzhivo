@@ -29,3 +29,15 @@ test('Server list authorizes the assigned expert and carries document metadata i
  await assert.rejects(two.get(own.id),e=>e.status===403);
  db.expertCases[0].archivedAt='2026-11-21';assert.deepEqual(await one.list(),[]);
 });
+
+test('Territory filters keep levels separate, escape values and narrow municipalities by region',()=>{
+ const base={role:'expert',status:'waiting',name:'Документ'};
+ const cases=[{...base,id:'r',level:'Региональный',territory:'Область А'},{...base,id:'m',level:'Муниципальный',territory:'Область А, Город <Б>'},{...base,id:'other',level:'Муниципальный',territory:'Область В, Город Г'},{...base,id:'legacy',level:'Муниципальный',territory:'Волжский'}];
+ const regional=expertShowcase(cases,{level:'Региональный',region:'Область А'});
+ assert.match(regional,/#expert-case\/r/);assert.doesNotMatch(regional,/#expert-case\/m/);assert.doesNotMatch(regional,/name="municipality"/);
+ const municipal=expertShowcase(cases,{level:'Муниципальный',region:'Область А',municipality:'Город <Б>'});
+ assert.match(municipal,/#expert-case\/m/);assert.doesNotMatch(municipal,/#expert-case\/(r|other|legacy)/);assert.match(municipal,/Город &lt;Б&gt;/);assert.doesNotMatch(municipal,/<option[^>]*>Город Г/);
+ assert.match(expertShowcase(cases,{level:'Муниципальный',region:'__unknown__'}),/#expert-case\/legacy/);
+ const federal=expertShowcase(cases,{level:'Федеральный',region:'Область А',municipality:'Город <Б>'});assert.doesNotMatch(federal,/name="region"|name="municipality"/);
+ assert.doesNotMatch(expertShowcase(cases),/>Локальный</);assert.match(expertShowcase(cases),/expert-catalog-reset/);
+});

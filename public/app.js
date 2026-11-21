@@ -422,6 +422,8 @@ async function refreshExpertCases(){
 const handlers={
  'history-select':b=>{state.historySelection={...state.historySelection,[b.dataset.doc]:{versionId:b.dataset.version,runId:b.dataset.run||null}};render();},
  'retry-case-history':async()=>{await loadCaseHistory();render();},
+ 'expert-catalog-level':b=>{const form=b.closest('form');state.expertCatalog={query:form.elements.query.value,level:b.dataset.level,region:'',municipality:''};render();},
+ 'expert-catalog-reset':()=>{state.expertCatalog={};render();},
  'refresh-expert-cases':async()=>{await refreshExpertCases();render();},
  'demo-login':async b=>{
    state.error='';
@@ -600,7 +602,7 @@ document.addEventListener('submit',event=>{const form=event.target;if(!form.id.e
    values.displayName=[family,given,patronymic].filter(Boolean).join(' ');
  }
  if(form.id==='login-form'||form.id==='register-form'){const session=await api(form.id==='register-form'?'auth/register':'auth/login',{username:values.username,password:values.password,...(form.id==='register-form'?{role:values.role,displayName:values.displayName,consent:values.consent==='on'}:{})});form.elements.password.value='';state.error='';await refresh({knownSession:session});const action=await applyAccessLink();if(action)await refresh();if(action==='admin'){render();settings();}else if(state.authReturn?.startsWith('expert-invite/')&&state.account.role==='expert'){const target=state.authReturn;state.authReturn=null;navigate(target,{replace:true});}else if(currentToken().startsWith('expert-invite/')&&state.account.role==='expert')render();else{navigate(state.account.role==='admin'?'methodology':state.account.role==='expert'?'experts':'overview',{replace:true});render();}}
- if(form.id==='expert-catalog-form'){state.expertCatalog={query:values.query||'',level:values.level||''};render();return;}
+ if(form.id==='expert-catalog-form'){state.expertCatalog={query:values.query||'',level:values.level||'',region:values.region||'',municipality:values.municipality||''};render();return;}
  if(form.id==='header-search-form'){state.search=values.query||'';go('documents');}
  if(form.id==='dashboard-filter-form'){state.dashboardFilter={mode:values.mode,period:values.period,from:values.from,to:values.to};render();}
  if(form.id==='basis-select-form'){const source=state.db.sources.find(s=>s.id===form.dataset.source),quote=values.quote?.trim();if(!source?.verified||!source.active||!quote||!source.text.includes(quote))throw Error('Цитата не найдена в проверенном источнике. Скопируйте точный текст нормы.');state.draft.basis=[source.title,source.revision,source.url,'«'+quote+'»'].join(' · ');state.dirty=true;closeModal();render();}
@@ -686,3 +688,5 @@ document.addEventListener('change',event=>{
  const byName=event.target.value==='name';
  list.append(...Array.from(list.children).sort((a,b)=>byName?a.dataset.title.localeCompare(b.dataset.title,'ru'):b.dataset.date.localeCompare(a.dataset.date)));
 });
+
+document.addEventListener('change',event=>{const form=event.target.closest('#expert-catalog-form');if(!form||!['region','municipality'].includes(event.target.name))return;state.expertCatalog={query:form.elements.query.value,level:form.elements.level.value,region:form.elements.region?.value||'',municipality:event.target.name==='region'?'':form.elements.municipality?.value||''};render();});
