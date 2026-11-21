@@ -128,6 +128,35 @@ export async function completion(system, payload, options) {
 }
 
 
+// Accept only individually validated, unambiguous replies for requested findings.
+function collectStageRows(raw, requested, validate) {
+  if (!Array.isArray(raw) || raw.length > 30) return [];
+  const counts = new Map();
+  for (const row of raw) {
+    if (object(row)) counts.set(row.findingId, (counts.get(row.findingId) || 0) + 1);
+  }
+  const byId = new Map(requested.map(finding => [finding.id, finding]));
+  return raw.flatMap(row => {
+    if (!object(row) || counts.get(row.findingId) !== 1 || !byId.has(row.findingId)) return [];
+    try {
+      return validate([row], [byId.get(row.findingId)]);
+    } catch (error) {
+      if (error.status !== 502) throw error;
+      return [];
+    }
+  });
+}
+
+function savedStageRows(run, stage, field) {
+  if (!run.resumedFrom) return [];
+  const last = run.aiTrace?.findLast(entry => entry.stage === stage);
+  if (last?.finishReason !== 'stop' || typeof last.response !== 'string') return [];
+  try {
+    const fenced = last.response.trim().match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i);
+    return JSON.parse(fenced ? fenced[1] : last.response)?.[field];
+  } catch { return []; }
+}
+
 export async function pipeline(run, text, options, persist) {
   const update=async(stage,status,patch={})=>{await persist(stage,status,patch);Object.assign(run,patch);run.stages[stage]=status;};
   const demo = run.mode === 'demo';
@@ -153,6 +182,27 @@ export async function pipeline(run, text, options, persist) {
     options.signal.throwIfAborted(); await update(stage, 'running', !demo && stage === 'analyst' ? { aiPolicy: run.aiPolicy, aiTrace: run.aiTrace } : {});
     const result = await fn(); options.signal.throwIfAborted(); return result;
   };
+  const finishFindings = async (stage, field, output, candidates, validate, label) => {
+    const results = new Map(candidates.filter(f => f[field]).map(f => [f.id, f[field]]));
+    const remaining = () => candidates.filter(f => !results.has(f.id));
+    const accept = async (raw, requested) => {
+      const accepted = collectStageRows(raw, requested, validate);
+      if (!accepted.length) return;
+      for (const row of accepted) results.set(row.findingId, row);
+      const findings = run.findings.map(f => results.has(f.id) ? { ...f, [field]: results.get(f.id) } : f);
+      await update(stage, 'running', { findings });
+    };
+    await accept(savedStageRows(run, stage, output), remaining());
+    for (let attempt = 0; attempt < 2 && remaining().length; attempt++) {
+      const requested = remaining();
+      const response = await call(stage, { ...context, document: text, findings: requested, sources: run.sources });
+      await accept(response?.[output], requested);
+    }
+    if (remaining().length) {
+      throw fail(`${label} обработал ${results.size} из ${candidates.length} замечаний. Готовые ответы сохранены. Продолжите проверку для оставшихся замечаний.`, 502);
+    }
+    return [...results.values()];
+  };
   if(run.stages.analyst!=='completed'){
   const analysis = await step('analyst', async () => {
     if (demo) { const a = demoAnalysis(text); return { ...a, findings: a.findings.map(f => ({ ...f, decision: decision() })) }; }
@@ -166,14 +216,15 @@ export async function pipeline(run, text, options, persist) {
   }
   if (!run.findings.length) { await update('reviewer', 'skipped'); await update('editor', 'skipped'); return run; }
   if(run.stages.reviewer!=='completed'){
-  const reviews = await step('reviewer', async () => demo ? demoReview(run.findings) : validateReviews((await call('reviewer', { ...context, document: text, findings: run.findings, sources: run.sources })).reviews, run.findings, text, run.sources));
+  const reviews = await step('reviewer', async () => demo ? demoReview(run.findings) : finishFindings('reviewer', 'review', 'reviews', run.findings,
+    (rows, findings) => validateReviews(rows, findings, text, run.sources), 'Проверяющий'));
   run.findings = run.findings.map(f => ({ ...f, review: reviews.find(r => r.findingId === f.id) }));
   await update('reviewer', 'completed', { findings: run.findings });
   if(options.singleStage)return run;
   }
   if(['completed','skipped'].includes(run.stages.editor))return run;
   const eligible = run.findings.filter(f => !f.review.evidenceRejected && (demo ? f.review.verdict === 'supported' : f.review.verdict !== 'contested'));
-  const edits = eligible.length ? await step('editor', async () => demo ? demoEdit(run.findings).map(e => ({ ...e, status: 'prepared' })) : validateEdits((await call('editor', { ...context, document: text, findings: eligible, sources: run.sources })).edits, eligible)) : [];
+  const edits = eligible.length ? await step('editor', async () => demo ? demoEdit(run.findings).map(e => ({ ...e, status: 'prepared' })) : finishFindings('editor', 'editor', 'edits', eligible, validateEdits, 'Редактор')) : [];
   run.findings = run.findings.map(f => ({
     ...f,
     editor: edits.find(e => e.findingId === f.id) || {

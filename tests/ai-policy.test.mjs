@@ -123,3 +123,23 @@ test('A successful provider response echoing the API key is rejected before audi
   await assert.rejects(completion('', {}, { key: 'provider-key-sentinel', model: 'deepseek-flash', signal: new AbortController().signal, onResponse: () => { recorded = true; }, fetcher: async () => new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: '{"echo":"provider-key-sentinel"}' } }] })) }), /недопустимые данные/);
   assert.equal(recorded, false);
 });
+
+test('Continuing an incomplete review reuses validated saved replies and requests only missing findings', async () => {
+  const v = version(SAMPLE_TEXT);
+  const run = newRun({ id: 'doc', runs: [] }, v, 'api', [], [], 'deepseek-flash');
+  run.resumedFrom = 'previous';
+  run.findings = [{ id: 'a', basis: [] }, { id: 'b', basis: [] }];
+  run.stages.analyst = 'completed';
+  run.aiTrace = [{ stage: 'reviewer', finishReason: 'stop', response: JSON.stringify({ reviews: [review(run.findings[0])] }) }];
+  const requests = [];
+  const fetcher = async (_url, options) => {
+    const payload = JSON.parse(JSON.parse(options.body).messages[1].content);
+    requests.push(payload.findings.map(f => f.id));
+    const content = JSON.stringify({ reviews: [review(run.findings[1])] });
+    return new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] }));
+  };
+  await pipeline(run, v.text, { singleStage: true, key: 'test-key', model: 'deepseek-flash', fetcher, signal: new AbortController().signal }, async () => {});
+  assert.deepEqual(requests, [['b']]);
+  assert.equal(run.stages.reviewer, 'completed');
+  assert.ok(run.findings.every(f => f.review.verdict === 'insufficient'));
+});
