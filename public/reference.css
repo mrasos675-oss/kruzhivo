@@ -137,7 +137,7 @@ h3 { font-size: 1.0625rem; font-weight: 650; line-height: 1.4; }
 .field:focus-within, .auth-input-wrap:focus-within { border-color: var(--accent); }
 .field .password-control { display: flex; }
 
-.sidebar { padding-top: 24px; }
+.sidebar { padding-top: 15px; }
 .sidebar .brand, .landing-nav .brand, .mobile-top .brand { color: var(--text); font-weight: 750; letter-spacing: -.035em; }
 .sidebar-person { padding: 12px 8px 18px; gap: 12px; }
 :is(.sidebar-avatar, .header-avatar, .profile-avatar, .mobile-profile) { border-radius: 50%; }
@@ -461,4 +461,27 @@ a[aria-current="page"] > .expert-queue-dot:not([hidden]) { color: inherit; }
 .sidebar .nav > a:is([href='/gov/new'], [href='#upload']).active:hover {
   background: var(--accent-hover);
   color: var(--on-accent);
+}
+
+/* Align the workspace name with breadcrumbs and bring the profile closer. */
+@media (min-width: 769px) {
+  .shell:not(.sidebar-collapsed) .sidebar > .brand {
+    line-height: 26px;
+  }
+  .shell:not(.sidebar-collapsed) .sidebar > .sidebar-person {
+    margin-top: 16px;
+    padding-top: 0;
+  }
+  .sidebar .sidebar-toggle {
+    top: 6px;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    border: 0;
+    background: transparent;
+  }
+  .sidebar-toggle svg {
+    width: 18px;
+    height: 18px;
+  }
 }
