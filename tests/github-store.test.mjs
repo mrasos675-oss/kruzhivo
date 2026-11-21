@@ -6,7 +6,7 @@ import {createCloudStore} from '../server/cloud-store.mjs';
 import {fakeGithub} from './helpers/github.mjs';
 import http from 'node:http';
 import {createHostedHandler} from '../api/index.mjs';
-import {passwordHash} from '../server/account-auth.mjs';
+import {createAccountAuth,passwordHash} from '../server/account-auth.mjs';
 
 const master=randomBytes(32).toString('base64url');
 const make=(api,extra={})=>createGithubStorage({token:'test-token',master,request:api.request,writeIntervalMs:0,cacheMs:0,...extra});
@@ -62,4 +62,22 @@ test('Real HTTP login, profile persistence and logout work across cold handlers 
  assert.equal((await call('storage/recover',login.cookie,{})).status,403);
  await call('auth/logout',login.cookie,{});assert.equal((await call('auth/session',login.cookie)).body.user,null);
  assert(api.calls.every(c=>!c.path.includes('neon')));
+});
+
+test('GitHub demo login commits the attempt and session rotation together and counts concurrent attempts', async () => {
+ const api=fakeGithub(),storage=make(api),account={id:'demo-official-v1',username:'official',role:'official',displayName:'Тест',salt:'a'.repeat(32),passwordHash:'b'.repeat(64)};
+ const auth=createAccountAuth(master,[account],storage,{demoEnabled:true});
+ const login=await auth.loginDemo('official','ip');
+ const cookie=login.cookie.split(';')[0];
+ const commitsBefore=api.calls.filter(c=>c.method==='PATCH'&&c.path.startsWith('/git/refs/')).length;
+ const rotated=await auth.loginDemo('official','ip',cookie);
+ assert.equal(api.calls.filter(c=>c.method==='PATCH'&&c.path.startsWith('/git/refs/')).length-commitsBefore,1);
+ assert.equal(await auth.current(cookie),null);
+ assert.equal((await auth.current(rotated.cookie.split(';')[0])).id,account.id);
+ const cold=createAccountAuth(master,[account],make(api),{demoEnabled:true});
+ for(let i=0;i<7;i++)await auth.loginDemo('official','ip');
+ const attempts=await Promise.allSettled([auth.loginDemo('official','ip'),cold.loginDemo('official','ip')]);
+ assert.equal(attempts.filter(r=>r.status==='fulfilled').length,1);
+ assert.equal(attempts.find(r=>r.status==='rejected').reason.status,429);
+ assert.equal((await storage.list('auth/sessions/')).length,9);
 });

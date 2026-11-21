@@ -13,7 +13,7 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
  if(!/^[\w.-]+\/[\w.-]+$/.test(repository)||!/^runtime-[a-z0-9-]+$/.test(branch))throw unavailable();
  const base='https://api.github.com/repos/'+repository;
  const key=createHash('sha256').update('kruzhivo-github-storage-v1\0'+String(master||'')+'\0'+repository+'\0'+branch).digest();
- let verified,cache,checkedAt=0,indexEtag,cacheHead,reading,generation=0,queue=Promise.resolve(),lastWrite=0;
+ let verified,cache,checkedAt=0,indexEtag,cacheHead,cacheTree,reading,generation=0,queue=Promise.resolve(),lastWrite=0;
  const bodies=new Map();let bodyBytes=0;
  const objectId=path=>createHmac('sha256',key).update(path).digest('hex');
  const validPath=path=>{if(typeof path!=='string'||!path||path.length>512||path.includes('..')||/[\x00-\x1f]/.test(path))throw unavailable();return path;};
@@ -53,11 +53,15 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
   const version=generation;
   const job=(async()=>{
    const r=await call('/git/ref/heads/'+branch,{headers:indexEtag?{'If-None-Match':indexEtag}:{},allowed:[404]});
-   let next,head;
-   if(r.status===304){if(!cache)throw unavailable();next=cache;head=cacheHead;}
+   let next,head,tree;
+   if(r.status===304){if(!cache)throw unavailable();next=cache;head=cacheHead;tree=cacheTree;}
    else if(r.status===404){next={format:1,entries:{}};}
-   else{head=r.json.object.sha;next=cache&&cacheHead===head?cache:(await snapshotAt(head)).index;}
-   if(version===generation){cache=next;cacheHead=head;checkedAt=now();indexEtag=r.response.headers.get('etag')||undefined;}
+   else{
+    head=r.json.object.sha;
+    const snapshot=cache&&cacheHead===head?{index:cache,tree:cacheTree}:await snapshotAt(head);
+    next=snapshot.index;tree=snapshot.tree;
+   }
+   if(version===generation){cache=next;cacheHead=head;cacheTree=tree;checkedAt=now();indexEtag=r.response.headers.get('etag')||undefined;}
    return cache||next;
   })();
   if(!force)reading=job;try{return await job;}finally{if(reading===job)reading=undefined;}
@@ -74,7 +78,9 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
   return {head,tree:commit.tree.sha,index:decodeIndex(file)};
  }
  async function snapshot(){
-  const ref=await call('/git/ref/heads/'+branch,{allowed:[404]});return ref.status===404?null:snapshotAt(ref.json.object.sha);
+  const ref=await call('/git/ref/heads/'+branch,{allowed:[404]});if(ref.status===404)return null;
+  const head=ref.json.object.sha;
+  return cache&&head===cacheHead&&cacheTree?{head,index:cache,tree:cacheTree}:snapshotAt(head);
  }
  async function initialize(){
   const encrypted=seal(Buffer.from(JSON.stringify({format:1,entries:{}})),'index');
@@ -108,14 +114,14 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
    const wait=writeIntervalMs-(now()-lastWrite);if(wait>0)await sleep(wait);
    const r=await call('/git/refs/heads/'+branch,{method:'PATCH',data:{sha:c.sha,force:false},allowed:[409,422]});lastWrite=now();
    if(r.status===409||r.status===422){await sleep(100*(attempt+1));continue;}
-   generation++;cache=index;cacheHead=c.sha;checkedAt=now();indexEtag=undefined;for(const x of saved)remember(x.entry.sha,x.bytes);
+   generation++;cache=index;cacheHead=c.sha;cacheTree=t.sha;checkedAt=now();indexEtag=undefined;for(const x of saved)remember(x.entry.sha,x.bytes);
    return saved.map(x=>({etag:x.entry.etag}));
   }
   throw conflict('BlobPreconditionFailedError');
  });}
  return {
   kind:'github',repository,branch,
-  async get(path){const e=(await readIndex()).entries[objectId(validPath(path))];if(!live(e))return null;const bytes=await readObject(e);return {statusCode:200,stream:new Response(bytes).body,blob:{etag:e.etag}};},
+  async get(path,{fresh=false}={}){const e=(await readIndex(fresh)).entries[objectId(validPath(path))];if(!live(e))return null;const bytes=await readObject(e);return {statusCode:200,stream:new Response(bytes).body,blob:{etag:e.etag}};},
   async head(path){const e=(await readIndex(true)).entries[objectId(validPath(path))];if(!live(e))throw conflict('BlobNotFoundError');return {etag:e.etag};},
   async put(path,bytes,options={}){return (await mutate([{path,bytes,options}]))[0];},
   async putMany(changes){return mutate(changes);},

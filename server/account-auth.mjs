@@ -23,22 +23,49 @@ export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=fals
  const path=token=>'auth/sessions/'+createHmac('sha256',master).update(token).digest('hex')+'.json';
  const stamp=a=>digest(JSON.stringify(a));
  async function read(p){const r=await storage.get(p,readOptions);if(!r||r.statusCode===404)return null;if(r.statusCode!==200)throw fail('Сервис входа временно недоступен.',503);return JSON.parse(await new Response(r.stream).text());}
- async function throttle(username,ip){
+ async function throttle(ip,sessionChanges=[]){
   const p='auth/attempts/'+createHmac('sha256',master).update(ip).digest('hex')+'.json';
   for(let i=0;i<5;i++){
-   const existing=await read(p),meta=existing?await storage.head(p):null,fresh=meta?await read(p):null;
-   const times=(fresh?.times||[]).filter(t=>Date.now()-t<900000);if(times.length>=10)throw fail('Слишком много попыток входа. Повторите через 15 минут.',429);times.push(Date.now());
-   try{await storage.put(p,JSON.stringify({times}),{...writeOptions,ttlDays:1,allowOverwrite:!!meta,...(meta?{ifMatch:meta.etag}:{})});return;}catch(e){if(!['BlobPreconditionFailedError','BlobAlreadyExistsError'].includes(e.name))throw e;}
+   let meta,fresh;
+   if(storage.kind==='github'){
+    const entry=await storage.get(p,{fresh:i>0});
+    if(entry){meta=entry.blob;fresh=await new Response(entry.stream).json();}
+   }else{
+    const existing=await read(p);
+    meta=existing?await storage.head(p):null;
+    fresh=meta?await read(p):null;
+   }
+   const now=Date.now(),times=(fresh?.times||[]).filter(t=>now-t<900000);
+   if(times.length>=10)throw fail('Слишком много попыток входа. Повторите через 15 минут.',429);
+   times.push(now);
+   const change={path:p,bytes:JSON.stringify({times}),options:{...writeOptions,ttlDays:1,allowOverwrite:!!meta,...(meta?{ifMatch:meta.etag}:{})}};
+   try{
+    if(sessionChanges.length)await storage.putMany([change,...sessionChanges]);
+    else await storage.put(change.path,change.bytes,change.options);
+    return;
+   }catch(e){
+    if(!['BlobPreconditionFailedError','BlobAlreadyExistsError'].includes(e.name))throw e;
+   }
   }
   throw fail('Повторите вход через несколько секунд.',429);
  }
  const registryPath='auth/registered-accounts-v1.json';
  async function allAccounts(){const saved=await read(registryPath);return [...rows,...parseAccounts(saved?.accounts||[]).filter(a=>!rows.some(e=>e.id===a.id||e.username===a.username))];}
- async function issueSession(a,header,demo=false){
-   const old=tokenFrom(header);if(/^[\w-]{43}$/.test(old||''))await storage.del(path(old));
+ function prepareSession(a,header,demo){
+   const old=tokenFrom(header);
    const token=randomBytes(32).toString('base64url'),expiresAt=Date.now()+seconds*1000;
-   await storage.put(path(token),JSON.stringify({accountId:a.id,stamp:stamp(a),expiresAt,demo}),{...writeOptions,ttlDays:7,allowOverwrite:false});
-   return {user:publicAccount(a),cookie:`${COOKIE}=${token}; Path=/; Max-Age=${seconds}; Secure; HttpOnly; SameSite=Strict`};
+   const changes=[{path:path(token),bytes:JSON.stringify({accountId:a.id,stamp:stamp(a),expiresAt,demo}),options:{...writeOptions,ttlDays:7,allowOverwrite:false}}];
+   if(/^[\w-]{43}$/.test(old||''))changes.unshift({path:path(old),remove:true});
+   return {changes,signed:{user:publicAccount(a),cookie:`${COOKIE}=${token}; Path=/; Max-Age=${seconds}; Secure; HttpOnly; SameSite=Strict`}};
+ }
+ async function issueSession(a,header,demo=false){
+   const {changes,signed}=prepareSession(a,header,demo);
+   if(changes.length>1&&storage.putMany)await storage.putMany(changes);
+   else for(const change of changes){
+    if(change.remove)await storage.del(change.path);
+    else await storage.put(change.path,change.bytes,change.options);
+   }
+   return signed;
  }
  return {
   async listAccounts(){return (await allAccounts()).map(publicAccount);},
@@ -49,7 +76,7 @@ export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=fals
    const available=await allAccounts();if(!available.length)throw fail('Учётные записи ещё не настроены.',503);
    const name=typeof username==='string'?username.trim().toLowerCase():'';
    if(!/^[a-z0-9._-]{1,64}$/.test(name)||typeof password!=='string'||password.length>200)throw fail('Неверный логин или пароль.',401);
-   await throttle(name,ip);const a=available.find(a=>a.username===name);
+   await throttle(ip);const a=available.find(a=>a.username===name);
    const actual=Buffer.from(await passwordHash(password,a?.salt||'0'.repeat(32)),'hex'),expected=Buffer.from(a?.passwordHash||'0'.repeat(64),'hex');
    if(!timingSafeEqual(actual,expected)||!a)throw fail('Неверный логин или пароль.',401);
    return issueSession(a,header);
@@ -58,7 +85,12 @@ export function createAccountAuth(master,accounts,storage=blob,{demoEnabled=fals
    if(!demoEnabled)throw fail('Демонстрационный вход отключён.',403);
    if(!['official','expert','admin'].includes(role))throw fail('Выберите роль для входа.',400);
    const a=demoAccount(rows,role);if(!a)throw fail('Демо-аккаунт этой роли не настроен.',503);
-   await throttle('demo','demo:'+ip);
+   if(storage.putMany){
+    const {changes,signed}=prepareSession(a,header,true);
+    await throttle('demo:'+ip,changes);
+    return signed;
+   }
+   await throttle('demo:'+ip);
    return issueSession(a,header,true);
   },
   async logout(header){const token=tokenFrom(header);if(/^[\w-]{43}$/.test(token||''))await storage.del(path(token));return `${COOKIE}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict`;},
