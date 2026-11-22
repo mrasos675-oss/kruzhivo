@@ -172,7 +172,7 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
       if(expertMatch){const [,caseId,action,number]=expertMatch;
         if(req.method==='GET'&&!action)return json(res,200,await expertReview.get(caseId));
         if(req.method==='GET'&&number){const c=await expertReview.get(caseId),bytes=expertDocx(c,Number(number));res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','Content-Disposition':'attachment; filename="expert-conclusion-v'+number+'.docx"'});return res.end(bytes);}
-        if(req.method==='POST'||req.method==='PUT'){const b=await jsonBody(req);const result=action==='accept'?await expertReview.accept(caseId,b.token,account?{...b.profile,name:account.displayName,accountId:account.id,username:account.username}:b.profile):action==='invite'?await expertReview.invite(caseId):action==='start'?await expertReview.start(caseId):action==='messages'?await expertReview.message(caseId,b.text):action==='draft'?await expertReview.save(caseId,b.text,b.revision,!!history):action==='sign'?await expertReview.sign(caseId,b.revision,!!history):action==='new-draft'?await expertReview.newDraft(caseId):null;if(result){
+        if(req.method==='POST'||req.method==='PUT'){const b=await jsonBody(req);const result=action==='accept'?await expertReview.accept(caseId,b.token,account?{...b.profile,name:account.displayName,accountId:account.id,username:account.username}:b.profile):action==='invite'?await expertReview.invite(caseId):action==='start'?await expertReview.start(caseId):action==='messages'?await expertReview.message(caseId,b.text):action==='draft'?await expertReview.save(caseId,b.text,b.revision,!!history):action==='sign'?await expertReview.sign(caseId,b.revision,!!history,b.text):action==='new-draft'?await expertReview.newDraft(caseId):null;if(result){
           if(result.history){
             const {runId, conclusion}=result.history;
             await saveHistory(runId,action==='sign'?'conclusion':'draft',{caseId, conclusion},conclusion);
@@ -348,3 +348,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const app = await createApp(); app.server.listen(port, '127.0.0.1', () => console.log(`КружИИво: http://127.0.0.1:${port}`));
   app.server.on('error', e => { console.error(e.code === 'EADDRINUSE' ? 'Порт занят. Укажите другой PORT в .env.' : 'Не удалось запустить локальный сервер.'); process.exitCode = 1; });
 }
+

@@ -117,3 +117,19 @@ test('Expert verdicts survive case reload and repeated verdict replaces one reco
  c=await expert.get(id);draft=c.conclusions.at(-1);text=withExpertDecision(draft.text,1,'rejected','Reason');await expert.save(id,text,draft.revision);
  const records=readExpertDecisions((await expert.get(id)).conclusions.at(-1).text);assert.equal(records.size,1);assert.deepEqual(records.get(1),{status:'rejected',comment:'Reason'});
 });
+
+
+test('Finish saves the current editor text atomically and rejects a second submission',async()=>{
+ const store=memory(),owner=createExpertReview(store,'owner'),expert=createExpertReview(store,'expert');
+ const {id,token}=await owner.create({name:'Проект'},version('Документ'),run());
+ await expert.accept(id,token,{name:'Эксперт',registryNumber:'123'});
+ await expert.save(id,'Старый текст',0);
+ await assert.rejects(expert.sign(id,0,false,'Новый текст'),e=>e.status===409);
+ await assert.rejects(expert.sign(id,1,false,'  '),e=>e.status===400);
+ assert.equal((await owner.get(id)).conclusions[0].text,'Старый текст');
+ const results=await Promise.allSettled([expert.sign(id,1,true,'Текущий текст'),expert.sign(id,1,true,'Текущий текст')]);
+ assert.equal(results.filter(x=>x.status==='fulfilled').length,1);
+ const saved=(await owner.get(id)).conclusions[0];
+ assert.equal(saved.text,'Текущий текст');assert.equal(saved.status,'confirmed');assert.equal(saved.revision,2);
+ assert.equal(results.find(x=>x.status==='fulfilled').value.history.conclusion.text,'Текущий текст');
+});
