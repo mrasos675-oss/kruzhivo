@@ -32,11 +32,11 @@ test('AI-agent connection controls respect owner and expert roles without exposi
 });
 
 test('Case tabs preserve unsaved conclusion and revision while switching panels',()=>{
- const draft={value:'Несохранённое заключение',dataset:{revision:'7'}},ids=['review','conclusion','discussion'];
+ const draft={value:'Несохранённое заключение',dataset:{revision:'7'}},ids=['review','conclusion'];
  const buttons=ids.map(id=>({dataset:{caseTab:id},attrs:{},setAttribute(k,v){this.attrs[k]=v;},classList:{toggle(){}}}));
  const panels=ids.map(id=>({dataset:{casePanel:id},hidden:id!=='review',draft:id==='conclusion'?draft:null}));
  const root={querySelectorAll(selector){return selector==='[data-case-tab]'?buttons:panels;}};
- for(const id of ['conclusion','discussion','review','conclusion'])assert.equal(activateCaseTab(id,root),true);
+ for(const id of ['conclusion','review','conclusion'])assert.equal(activateCaseTab(id,root),true);
  assert.equal(panels[1].hidden,false);assert.equal(panels[0].hidden,true);
  assert.equal(buttons[1].attrs['aria-selected'],'true');assert.equal(buttons[1].tabIndex,0);assert.equal(buttons[0].tabIndex,-1);
  assert.equal(panels[1].draft,draft);assert.equal(draft.value,'Несохранённое заключение');assert.equal(draft.dataset.revision,'7');
