@@ -212,6 +212,13 @@ dialog::backdrop { background: #17243470; }
   border-radius: var(--radius);
   box-shadow: var(--ui-shadow);
 }
+.mission-illustration {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 24px;
+  border-radius: var(--radius);
+}
 .landing-section { background: var(--surface); }
 .landing-section:nth-child(even) { background: var(--bg); }
 .feature-grid .card-link { background: var(--surface); border-top: 3px solid var(--accent); }
