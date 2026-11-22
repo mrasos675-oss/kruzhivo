@@ -23,7 +23,7 @@ test('Dashboard period filtering includes full dates, rejects reversed range, an
  assert.equal(selectPeriod([{createdAt:'2026-11-10T12:00:00'}],{period:'custom',from:'2026-11-10',to:'2026-11-10'},now).length,1);assert.equal(selectPeriod(activity,{period:'custom',from:'2026-11-16',to:'2026-11-01'},now).length,0);
  const db=seed(),before=JSON.stringify(db);const real=officialDashboard(db,[],{mode:'real'});for(const text of ['Проверить новый документ','В правовой базе нет проверенных источников','У вас пока нет проверок','Требуют внимания','Последние проверки','Проценты показывают ход работы','Учебные документы','Попробовать на эталонном регламенте'])assert.ok(!real.includes(text));assert.match(real,/id="dashboard-filter-form"/);assert.ok(!real.includes('Завершённые проверки'));assert.match(real,/Запуски проверок НПА/);assert.match(real,/>Загружено документов<\/p><strong>0</);assert.ok(!real.includes('Демонстрационные показатели'));
  const demo=officialDashboard(db,[],{mode:'demo'});assert.match(demo,/Демонстрационные показатели/);assert.match(demo,/>Загружено документов<\/p><strong>24</);assert.doesNotMatch(real + demo,/Рассмотренные замечания|gauge-card/);assert.match(demo,/Запуски проверок НПА/);assert.equal(JSON.stringify(db),before);
- assert.match(expertDashboard([],{mode:'real'}),/Появится после первых результатов/);
+ assert.match(expertDashboard([],{mode:'real'}),/aria-label="[^"]*: 0 заключений/);
 });
 
 test('Landing introduces the service and a separate login has one form; demo identities cannot grant roles',()=>{
@@ -55,7 +55,10 @@ test('Expert statistics count own conclusions by confirmation date and preserve 
  const html=expertDashboard(cases,options);
  assert.match(html,/id="my-conclusions-title">Мои заключения/);
  assert.match(html,/<strong>2<\/strong><span>заключений/);
- assert.match(html,/Мои заключения по неделям/);
+ assert.match(html,/<div class="dashboard-charts"><section class="card activity-card"><h2>Мои заключения по неделям<\/h2>[\s\S]*?<\/section><section class="card activity-card"><h2>Запросы экспертизы<\/h2>/);
+ assert.equal((html.match(/Мои заключения по неделям/g)||[]).length,1);
+ assert.doesNotMatch(html,/<h2>Дела с готовым заключением<\/h2>/);
+ assert.match(html,/Дел с готовым заключением<\/p><strong>1<\/strong>/);
  assert.match(html,/Количество подготовленных заключений, шт./);
  assert.match(html,/Запросов экспертизы<\/p><strong>2<\/strong>/);
  assert.match(html,/role="img" aria-label="[^"]*заключений/);
