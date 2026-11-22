@@ -205,6 +205,7 @@ dialog::backdrop { background: #17243470; }
 .entry-intro > p:not(.eyebrow) { max-width: 57ch; }
 .landing-hero .entry-illustration {
   width: 100%;
+  max-height: none;
   background: var(--surface);
   padding: clamp(14px, 2vw, 28px);
   border: 1px solid var(--border);

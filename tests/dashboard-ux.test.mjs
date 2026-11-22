@@ -27,7 +27,7 @@ test('Dashboard period filtering includes full dates, rejects reversed range, an
 });
 
 test('Landing introduces the service and a separate login has one form; demo identities cannot grant roles',()=>{
- const page=landingPage();assert.equal((page.match(/id="login-form"/g)||[]).length,0);assert.equal((loginPage().match(/id="login-form"/g)||[]).length,1);assert.ok(!loginPage().includes('loginRole'));assert.ok(!loginPage().includes('type="radio"'));for(const field of ['username','password'])assert.ok(loginPage().includes('name="'+field+'"'));assert.match(page,/entry-intro/);assert.match(page,/portal-illustration.svg/);
+ const page=landingPage();assert.equal((page.match(/id="login-form"/g)||[]).length,0);assert.equal((loginPage().match(/id="login-form"/g)||[]).length,1);assert.ok(!loginPage().includes('loginRole'));assert.ok(!loginPage().includes('type="radio"'));for(const field of ['username','password'])assert.ok(loginPage().includes('name="'+field+'"'));assert.match(page,/entry-intro/);assert.match(page,/landing-hero\.webp/);
  assert.equal(demoProfileFor({id:'demo-official-v1',role:'official'}).fullName,'Иванов Иван Иванович');assert.equal(demoProfileFor({id:'real-user',role:'official'}),null);assert.equal(demoProfileFor({id:'demo-expert-v1',role:'expert'}).role,undefined);
 });
 
