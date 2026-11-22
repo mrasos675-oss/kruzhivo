@@ -133,3 +133,17 @@ test('Finish saves the current editor text atomically and rejects a second submi
  assert.equal(saved.text,'Текущий текст');assert.equal(saved.status,'confirmed');assert.equal(saved.revision,2);
  assert.equal(results.find(x=>x.status==='fulfilled').value.history.conclusion.text,'Текущий текст');
 });
+
+
+ test('Save returns the committed revision; repeated and parallel stale writes never overwrite it',async()=>{
+ const store=memory(),owner=createExpertReview(store,'owner'),expert=createExpertReview(store,'expert');
+ const {id,token}=await owner.create({name:'Проект'},version('Документ'),run());await expert.accept(id,token,{name:'Эксперт',registryNumber:'123'});
+ const saved=await expert.save(id,'Первое заключение',0);assert.equal(saved.revision,1);
+ await assert.rejects(expert.save(id,'Повтор старого запроса',0),e=>e.status===409);
+ const attempts=await Promise.allSettled([expert.save(id,'Вкладка 1',1),expert.save(id,'Вкладка 2',1)]);
+ assert.equal(attempts.filter(r=>r.status==='fulfilled').length,1);assert.equal(attempts.find(r=>r.status==='rejected').reason.status,409);
+ const current=(await expert.get(id)).conclusions.at(-1);assert.equal(current.text,'Вкладка 1');
+ await assert.rejects(expert.sign(id,saved.revision,false,'Чужая перезапись'),e=>e.status===409);
+ const again=await expert.save(id,current.text,current.revision,true);assert.equal(again.revision,again.history.conclusion.revision);
+ await expert.sign(id,again.revision);assert.equal((await expert.get(id)).conclusions.at(-1).text,'Вкладка 1');
+ });
