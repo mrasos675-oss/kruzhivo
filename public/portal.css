@@ -965,3 +965,20 @@ dialog{max-height:calc(100dvh - 32px)}
 .expert-comment-hint{display:none;width:100%;margin-top:4px}
 [data-expert-verdict="modified"][aria-disabled="true"]{opacity:.65}
 [data-expert-verdict="modified"][aria-disabled="true"]:is(:hover,:focus-visible) ~ .expert-comment-hint{display:block}
+
+.official-home .topbar,.official-home .sidebar,.official-home .content{color:#111}
+.official-home :is(.sidebar-person strong,.sidebar-brand,.content h2,.metric-tile strong){font-size:.875rem}
+.official-home :is(.topbar,.nav-label,.sidebar-person small,.content p,.content button,.content label,.content a,.content td,.content th){font-size:.75rem}
+.official-home :is(.content .muted,.content small,.recent-action time,.brand-subtitle){font-size:.625rem}
+.official-home .official-activity svg{display:block;width:100%;max-height:210px}
+.official-home .official-activity svg text{font-size:10px;fill:#111}
+.official-activity .activity-trend{stroke:var(--text);pointer-events:none}
+.history-item>.npa-card-metadata,.history-item>.history-action-panel,.history-item>.history-document-details{margin-inline:clamp(12px,2vw,24px);margin-block-end:12px}
+.history-item>.npa-card-metadata{display:grid;gap:10px}
+.history-item>.npa-card-metadata>form{margin-block-start:10px}
+[data-npa-fields]{border:0;padding:0;margin:0;min-inline-size:0;display:grid;gap:12px}
+[data-npa-fields] legend{padding:0;margin-bottom:8px;font-weight:600}
+[data-npa-fields] .field{margin:0}
+.document-full-text{white-space:pre-wrap;overflow-wrap:anywhere;margin-block-end:12px}
+.document-preview .structure-list{padding-top:12px}
+.document-preview>.actions:empty{display:none}
