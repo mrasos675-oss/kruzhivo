@@ -234,6 +234,26 @@ dialog::backdrop { background: #17243470; }
   border-radius: var(--radius);
   box-shadow: var(--ui-shadow);
 }
+@media (min-width: 769px) {
+  .auth-layout-demo .auth-benefits {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+  }
+  .auth-layout-demo .auth-illustration {
+    position: relative;
+    flex: 1;
+    min-height: 140px;
+    margin-top: 24px;
+  }
+  .auth-layout-demo .auth-illustration img {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    margin: 0;
+    object-fit: contain;
+  }
+}
 .auth-layout .entry-form, .login-screen > .card { border-top: 3px solid var(--accent); }
 .role-entry.btn { border-radius: var(--button-radius); }
 .role-entry .role-entry-icon { border-radius: var(--button-radius); }
