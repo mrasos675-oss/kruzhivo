@@ -679,6 +679,15 @@ dialog{max-height:calc(100dvh - 32px)}
 .case-section-head .muted{font-size:.8125rem}
 .case-conclusion,.case-discussion{padding:24px}
 .conclusion-tools{display:grid;gap:16px;margin-bottom:24px}
+.expert-outcomes{min-width:0;margin:0;padding:0;border:0}
+.expert-outcomes legend{padding:0;margin-bottom:8px;font-weight:600}
+.expert-outcome-options{display:grid;gap:8px}
+.expert-outcome-option{display:grid;grid-template-columns:18px minmax(0,1fr);align-items:start;gap:10px;min-height:44px;padding:12px;border-radius:8px;cursor:pointer}
+.expert-outcome-option input[type="radio"]{width:18px;height:18px;min-height:0;margin:3px 0 0;padding:0;accent-color:currentColor;cursor:pointer}
+.expert-outcome-option:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.expert-outcome-low{background:#dcf4e6;color:#11633b}
+.expert-outcome-medium{background:#fff3d0;color:#705000}
+.expert-outcome-high{background:#fdebef;color:#b71936}
 .conclusion-tools>.btn{justify-self:start;font-size:.8125rem}
 .conclusion-tools .save-indicator{margin:0;font-size:.75rem;line-height:1.6}
 #expert-review-counter{font-size:.8125rem;font-weight:600;color:var(--text)}
