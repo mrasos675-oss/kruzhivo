@@ -147,3 +147,18 @@ test('Finish saves the current editor text atomically and rejects a second submi
  const again=await expert.save(id,current.text,current.revision,true);assert.equal(again.revision,again.history.conclusion.revision);
  await expert.sign(id,again.revision);assert.equal((await expert.get(id)).conclusions.at(-1).text,'Вкладка 1');
  });
+
+test('New expert cases use confirmed territory while old cases retain their snapshot',async()=>{
+ const store=memory(),owner=createExpertReview(store,'owner');
+ const doc={name:'НПА',level:'Муниципальный',territory:'Волжский'};
+ const v=version('Исходный текст');
+ const first=await owner.create(doc,v,run());
+ doc.npaMetadata={level:'Муниципальный',region:'Волгоградская область',municipality:'Волжский',source:'manual'};
+ const second=await owner.create(doc,v,{...run(),id:'run-2'});
+ const list=await owner.list();
+ const legacy=list.find(c=>c.id===first.id),current=list.find(c=>c.id===second.id);
+ assert.equal(legacy.territory,'Волжский');
+ assert.equal(legacy.region,null);
+ assert.equal(current.region,'Волгоградская область');
+ assert.equal(current.municipality,'Волжский');
+});

@@ -23,6 +23,24 @@ import { PROVIDERS, PROTOCOLS, legacyConnection, emptyConnection, normalizeConne
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const string = (x, max, label) => { if (typeof x !== 'string' || !x.trim() || x.length > max) throw fail(`${label}: допустимо от 1 до ${max} символов.`, 400); return x.trim(); };
 const optional = (x, max = 10000) => x == null || x === '' ? '' : string(x, max, 'Поле');
+function npaMetadata(input) {
+  const { level, source } = input;
+  if (!['Федеральный', 'Региональный', 'Муниципальный', 'Локальный'].includes(level))
+    throw fail('Выберите допустимый уровень НПА.', 400);
+  const region = optional(input.region, 100) || null;
+  const municipality = optional(input.municipality, 98) || null;
+  const needsRegion = level === 'Региональный' || level === 'Муниципальный';
+  if (Boolean(region) !== needsRegion || Boolean(municipality) !== (level === 'Муниципальный'))
+    throw fail('Заполните территорию в соответствии с уровнем НПА.', 400);
+  if (source === 'manual') return { level, region, municipality, source, sourceUrl: null };
+  if (source !== 'official') throw fail('Укажите источник сведений о НПА.', 400);
+  const sourceUrl = optional(input.sourceUrl, 2000);
+  let url;
+  try { url = new URL(sourceUrl); } catch { throw fail('Укажите ссылку на официальный источник.', 400); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+    throw fail('Укажите ссылку на официальный источник.', 400);
+  return { level, region, municipality, source, sourceUrl: url.href };
+}
 function findDoc(db, docId) { const d = db.documents.find(x => x.id === docId); if (!d) throw fail('Документ не найден.', 404); return d; }
 function locate(db, runId) { for (const d of db.documents) { const r = d.runs.find(x => x.id === runId); if (r) return { d, r, v: d.versions.find(v => v.id === r.versionId) }; } throw fail('Запуск не найден.', 404); }
 function safeUrl(value) { let u; try { u = new URL(string(value, 2000, 'URL')); } catch { throw fail('Укажите корректный HTTP(S)-адрес.', 400); } if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password) throw fail('Укажите HTTP(S)-адрес без пароля.', 400); return u.href; }
@@ -228,10 +246,19 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
         const v = version(text, 1, optional(b.fileName, 250) || 'Вставленный текст');
         if (b.kind !== undefined && !documentKinds.includes(b.kind)) throw fail('Выберите допустимый вид документа.', 400);
         if (b.level && !['Федеральный','Региональный','Муниципальный','Локальный'].includes(b.level)) throw fail('Выберите допустимый уровень НПА.',400);
-        const d = { id: id(), kind: b.kind || null, level: b.level || null, territory: optional(b.territory, 200) || null, name: string(b.name, 180, 'Название'), sample: b.text===SAMPLE_TEXT||b.text===CLEAN_TEXT||b.text?.includes('УЧЕБНЫЙ ПРИМЕР. Не является действующим нормативным правовым актом.')===true, createdAt: now(), versions: [v], runs: [] };
+        const metadata = b.source || 'region' in b || 'municipality' in b ? npaMetadata(b) : null;
+        const territory = metadata ? [metadata.region, metadata.municipality].filter(Boolean).join(', ') : optional(b.territory, 200);
+        const d = { id: id(), ...(metadata && { npaMetadata: metadata }), kind: b.kind || null, level: b.level || null, territory: territory || null, name: string(b.name, 180, 'Название'), sample: b.text===SAMPLE_TEXT||b.text===CLEAN_TEXT||b.text?.includes('УЧЕБНЫЙ ПРИМЕР. Не является действующим нормативным правовым актом.')===true, createdAt: now(), versions: [v], runs: [] };
         await originals.attach(b.uploadId, v);
         try { await store.change(db => { db.documents.unshift(d); }); } catch (error) { await originals.discard(v); throw error; }
         return json(res, 201, { id: d.id });
+      }
+      const metadataMatch = p.match(/^\/api\/documents\/([^/]+)\/metadata$/);
+      if (req.method === 'PATCH' && metadataMatch) {
+        if (account && account.role !== 'official') throw fail('Изменять карточку НПА может специалист.', 403);
+        const metadata = npaMetadata(await jsonBody(req));
+        await store.change(db => { findDoc(db, metadataMatch[1]).npaMetadata = metadata; });
+        return json(res, 200, { ok: true });
       }
       let m = p.match(/^\/api\/documents\/([^/]+)\/versions$/);
       if (req.method === 'POST' && m) {
@@ -332,7 +359,7 @@ export async function createApp({ dataDir = process.env.DATA_DIR || join(root, '
       m = p.match(/^\/api\/examples\/([^/]+)$/);
       if (req.method === 'PATCH' && m) { const b = await jsonBody(req); await store.change(db => { const e = db.examples.find(x => x.id === m[1]); if (!e) throw fail('Пример не найден.', 404); if ('explanation' in b) { e.explanation = string(b.explanation, 10000, 'Объяснение'); e.verified = false; } if ('sourceIds' in b) { if (!Array.isArray(b.sourceIds) || b.sourceIds.length > 20 || b.sourceIds.some(id => !db.sources.some(s => s.id === id))) throw fail('Некорректные источники примера.', 400); e.sourceIds = [...new Set(b.sourceIds)]; e.verified = false; } if ('applicability' in b) { e.applicability = string(b.applicability, 3000, 'Применимость'); e.verified = false; } if ('active' in b) e.active = b.active === true; if (b.verified === false) e.verified = false; if (b.verified === true) { if (!e.sourceIds.length || e.sourceIds.some(id => !db.sources.some(s => s.id === id && s.verified && s.active))) throw fail('Для подтверждения примера нужны связанные проверенные источники.', 400); e.verified = true; } }); return json(res, 200, { ok: true }); }
       if (p.startsWith('/api/')) throw fail('Действие не найдено.', 404);
-      const files = { '/app-render.js':['app-render.js','text/javascript; charset=utf-8'], '/action-help.js':['action-help.js','text/javascript; charset=utf-8'], '/provision-map.js':['provision-map.js','text/javascript; charset=utf-8'], '/document-kinds.js':['document-kinds.js','text/javascript; charset=utf-8'], '/legal-reference.js':['legal-reference.js','text/javascript; charset=utf-8'], '/legal-base.js':['legal-base.js','text/javascript; charset=utf-8'], '/portal.css':['portal.css','text/css; charset=utf-8'], '/report.css':['report.css','text/css; charset=utf-8'], '/shared/report-view.mjs':['../shared/report-view.mjs','text/javascript; charset=utf-8'], '/portal-router.js':['portal-router.js','text/javascript; charset=utf-8'], '/accessibility.js':['accessibility.js','text/javascript; charset=utf-8'], '/expert-editor.js':['expert-editor.js','text/javascript; charset=utf-8'], '/shared/provision-graph.mjs':['../shared/provision-graph.mjs','text/javascript; charset=utf-8'], '/shared/report-format.mjs':['../shared/report-format.mjs','text/javascript; charset=utf-8'], '/shared/document-structure.mjs':['../shared/document-structure.mjs','text/javascript; charset=utf-8'], '/dashboard.js':['dashboard.js','text/javascript; charset=utf-8'], '/portal-illustration.svg':['portal-illustration.svg','image/svg+xml'], '/demo-official.svg':['demo-official.svg','image/svg+xml'], '/demo-expert.svg':['demo-expert.svg','image/svg+xml'], '/landing.js':['landing.js','text/javascript; charset=utf-8'], '/profile.js':['profile.js','text/javascript; charset=utf-8'], '/samples.js':['samples.js','text/javascript; charset=utf-8'], '/login.js':['login.js','text/javascript; charset=utf-8'], '/expert-showcase.js': ['expert-showcase.js','text/javascript; charset=utf-8'], '/cabinets.js': ['cabinets.js','text/javascript; charset=utf-8'], '/transparency.js': ['transparency.js', 'text/javascript; charset=utf-8'], '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/review.mjs': ['../shared/review.mjs', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/fonts/InterTight.ttf': ['fonts/InterTight.ttf', 'font/ttf'] };
+      const files = { '/app-render.js':['app-render.js','text/javascript; charset=utf-8'], '/action-help.js':['action-help.js','text/javascript; charset=utf-8'], '/provision-map.js':['provision-map.js','text/javascript; charset=utf-8'], '/document-kinds.js':['document-kinds.js','text/javascript; charset=utf-8'], '/legal-reference.js':['legal-reference.js','text/javascript; charset=utf-8'], '/legal-base.js':['legal-base.js','text/javascript; charset=utf-8'], '/portal.css':['portal.css','text/css; charset=utf-8'], '/report.css':['report.css','text/css; charset=utf-8'], '/shared/report-view.mjs':['../shared/report-view.mjs','text/javascript; charset=utf-8'], '/portal-router.js':['portal-router.js','text/javascript; charset=utf-8'], '/accessibility.js':['accessibility.js','text/javascript; charset=utf-8'], '/expert-editor.js':['expert-editor.js','text/javascript; charset=utf-8'], '/quote-pairs.js':['quote-pairs.js','text/javascript; charset=utf-8'], '/shared/provision-graph.mjs':['../shared/provision-graph.mjs','text/javascript; charset=utf-8'], '/shared/report-format.mjs':['../shared/report-format.mjs','text/javascript; charset=utf-8'], '/shared/document-structure.mjs':['../shared/document-structure.mjs','text/javascript; charset=utf-8'], '/dashboard.js':['dashboard.js','text/javascript; charset=utf-8'], '/portal-illustration.svg':['portal-illustration.svg','image/svg+xml'], '/demo-official.svg':['demo-official.svg','image/svg+xml'], '/demo-expert.svg':['demo-expert.svg','image/svg+xml'], '/landing.js':['landing.js','text/javascript; charset=utf-8'], '/profile.js':['profile.js','text/javascript; charset=utf-8'], '/samples.js':['samples.js','text/javascript; charset=utf-8'], '/login.js':['login.js','text/javascript; charset=utf-8'], '/expert-showcase.js': ['expert-showcase.js','text/javascript; charset=utf-8'], '/cabinets.js': ['cabinets.js','text/javascript; charset=utf-8'], '/transparency.js': ['transparency.js', 'text/javascript; charset=utf-8'], '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/review.mjs': ['../shared/review.mjs', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/fonts/InterTight.ttf': ['fonts/InterTight.ttf', 'font/ttf'] };
       if(!files[p]&&/^\/(?:login|register|restore|gov|expert|notifications|profile|help|sources|samples|privacy|terms|app)(?:\/|$)/.test(p))files[p]=['index.html','text/html; charset=utf-8'];
       if (!files[p] || !['GET', 'HEAD'].includes(req.method)) throw fail('Страница не найдена.', 404);
       const [file, type] = files[p]; res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' }); res.end(req.method === 'HEAD' ? undefined : await readFile(join(root, 'public', file)));
