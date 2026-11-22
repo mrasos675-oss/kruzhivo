@@ -949,3 +949,10 @@ dialog{max-height:calc(100dvh - 32px)}
 .expert-document .quote-expert{background:#cceeff;color:#123e58;border-bottom:2px solid #237da5}.quote-source{font:600 11px/1.4 system-ui;display:inline-block;margin-right:4px;padding:0 3px;border:1px solid currentColor;border-radius:3px;user-select:none}.expert-document mark mark{box-decoration-break:clone}
 
 .expert-document .quote-ai.quote-expert{background:linear-gradient(#cceeff 50%,#fff0b0 50%);color:#1f2a44}.quote-source:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+
+.expert-finding.quote-pair-active,.expert-document mark.quote-pair-active{outline:2px solid var(--primary,#2257c7);outline-offset:2px}
+.expert-document mark.quote-ai,.expert-document [data-quote-pairs]{cursor:pointer;scroll-margin-top:100px}
+.expert-finding [data-show-quote]{margin-bottom:14px}
+.expert-comment-hint{display:none;width:100%;margin-top:4px}
+[data-expert-verdict="modified"][aria-disabled="true"]{opacity:.65}
+[data-expert-verdict="modified"][aria-disabled="true"]:is(:hover,:focus-visible) ~ .expert-comment-hint{display:block}

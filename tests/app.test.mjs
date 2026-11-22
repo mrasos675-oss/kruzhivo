@@ -46,6 +46,7 @@ test('HTTP: security, decisions, conflicts, report, versions and persistence',as
  const dir=await temp();const app=await createApp({dataDir:dir,initialKey:'secret-test-key'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${app.server.address().port}`;
  const call=async(path,data,method='POST',extra={})=>fetch(base+'/api/'+path,data===undefined?extra:{method,headers:{Origin:base,'x-kruzhivo-client':'1','Content-Type':'application/json',...extra},body:JSON.stringify(data)});
  try{
+
  const boot=await(await call('bootstrap')).json();assert.equal(boot.config.configured,true);assert.ok(!JSON.stringify(boot).includes('secret-test-key'));
  const evil=await new Promise((resolve,reject)=>{http.get(base+'/api/bootstrap',{headers:{Host:'evil.example'}},res=>{res.resume();resolve(res.statusCode);}).on('error',reject);});assert.equal(evil,403);
  assert.equal((await fetch(base+'/api/settings',{method:'POST',body:'{}'})).status,403);
@@ -92,4 +93,25 @@ test('Cancelled provider call preserves partial results and cannot complete late
 });
 test('Export strips invalid XML controls and includes exact legal basis quotations',()=>{
  const a=demoAnalysis(SAMPLE_TEXT),r={status:'completed',createdAt:new Date().toISOString(),mode:'demo',number:1,findings:[{...a.findings[0],basis:[{sourceId:'s',locator:'п.1',quote:'Точная цитата нормы'}],decision:{status:'confirmed',explanation:'Тест\u0000',proposal:'',basis:''}}],coverage:[],limitations:[],sources:[{id:'s',title:'Учебный источник',revision:'Тестовая редакция',url:'https://example.org'}]};const xml=unzipEntry(reportDocx({name:'Тест'}, {number:1},r),'word/document.xml').toString();assert.ok(!xml.includes('\u0000'));assert.match(xml,/Точная цитата нормы/);assert.match(xml,/Тестовая редакция/);
+});
+
+test('HTTP: confirmed territory metadata preserves legacy filter values',async()=>{
+ const dir=await temp();const app=await createApp({dataDir:dir});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${app.server.address().port}`;
+ const call=async(path,data,method='POST',extra={})=>fetch(base+'/api/'+path,data===undefined?extra:{method,headers:{Origin:base,'x-kruzhivo-client':'1','Content-Type':'application/json',...extra},body:JSON.stringify(data)});
+ try{
+  const legacy = await (await call('documents',{name:'Старый НПА',text:'Текст',level:'Муниципальный',territory:'Волжский'})).json();
+  const metadataPath = 'documents/'+legacy.id+'/metadata';
+  const municipal = {level:'Муниципальный',region:'Волгоградская область',municipality:'Волжский',source:'manual'};
+  assert.equal((await call(metadataPath,{...municipal,region:''},'PATCH')).status,400);
+  assert.equal((await call(metadataPath,{...municipal,level:'Федеральный'},'PATCH')).status,400);
+  assert.equal((await call(metadataPath,municipal,'PATCH')).status,200);
+  const savedLegacy = app.store.read().documents.find(d=>d.id===legacy.id);
+  assert.deepEqual(savedLegacy.npaMetadata,{...municipal,sourceUrl:null});
+  assert.equal(savedLegacy.territory,'Волжский');
+  const created = await call('documents',{name:'Региональный НПА',text:'Текст',level:'Региональный',region:'Волгоградская область',source:'official',sourceUrl:'https://example.org/act'});
+  assert.equal(created.status,201);
+  const savedNew = app.store.read().documents.find(d=>d.name==='Региональный НПА');
+  assert.equal(savedNew.territory,'Волгоградская область');
+  assert.equal(savedNew.npaMetadata.sourceUrl,'https://example.org/act');
+ }finally{await app.close();await rm(dir,{recursive:true,force:true});}
 });
