@@ -82,7 +82,7 @@ test('Status follows server assignment and pickup in showcase, my cases and case
   assert.doesNotMatch(html,/>Ожидает эксперта</);
  }
  await expert.save(c.id,'Заключение',0);await expert.sign(c.id,1);
- assert.match(expertList(await expert.list()),/>Заключение готово</);
+ assert.match(expertList(await expert.list()),/>Заключение отправлено</);
  const invitation=await owner.create({name:'По приглашению'},version('Текст'),{id:'invited',status:'completed',mode:'api',findings:[],sources:[]});
  assert.equal((await owner.get(invitation.id)).status,'waiting');
  await expert.accept(invitation.id,invitation.token,{name:'Эксперт',registryNumber:'123'});
