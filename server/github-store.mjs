@@ -7,9 +7,9 @@ const unavailable=()=>Object.assign(new Error('Хранилище временн
 const conflict=name=>Object.assign(new Error(name),{name});
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
-// Runtime objects live in an isolated private branch. Neither their contents nor
+// Runtime objects live in an isolated data branch. Neither their contents nor
 // the object index are readable without the server's existing encryption secret.
-export function createGithubStorage({token,master,repository='mrasos675-oss/kruzhivo',branch='runtime-data',request=fetch,cacheMs=2000,writeIntervalMs=1000,now=Date.now,sleep=delay}={}){
+export function createGithubStorage({token,master,repository='mrasos675-oss/kruzhivo',branch='runtime-data',allowPublicRepository=false,request=fetch,cacheMs=2000,writeIntervalMs=1000,now=Date.now,sleep=delay}={}){
  if(!/^[\w.-]+\/[\w.-]+$/.test(repository)||!/^runtime-[a-z0-9-]+$/.test(branch))throw unavailable();
  const base='https://api.github.com/repos/'+repository;
  const key=createHash('sha256').update('kruzhivo-github-storage-v1\0'+String(master||'')+'\0'+repository+'\0'+branch).digest();
@@ -37,7 +37,7 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
   let json;try{json=await response.json();}catch{const e=unavailable();e.githubOperation=operation;e.githubStatus=response.status;throw e;}return {status:response.status,response,json};
  }
  async function verify(){
-  verified??=call('').then(({json})=>{if(json.private!==true||json.full_name?.toLowerCase()!==repository.toLowerCase())throw unavailable();}).catch(e=>{verified=undefined;throw e;});
+  verified??=call('').then(({json})=>{if((json.private!==true&&!(allowPublicRepository&&json.private===false))||json.full_name?.toLowerCase()!==repository.toLowerCase())throw unavailable();}).catch(e=>{verified=undefined;throw e;});
   return verified;
  }
  function decodeIndex(file){
@@ -85,7 +85,7 @@ export function createGithubStorage({token,master,repository='mrasos675-oss/kruz
  async function initialize(){
   const encrypted=seal(Buffer.from(JSON.stringify({format:1,entries:{}})),'index');
   const {json:b}=await call('/git/blobs',{method:'POST',data:{content:encrypted.toString('base64'),encoding:'base64'}});
-  const {json:t}=await call('/git/trees',{method:'POST',data:{tree:[DATA_CONFIG,{path:INDEX,mode:'100644',type:'blob',sha:b.sha},{path:'README.md',mode:'100644',type:'blob',content:'Private encrypted runtime data for КружИИво. The encryption key is held only by the server.\n'}]}});
+  const {json:t}=await call('/git/trees',{method:'POST',data:{tree:[DATA_CONFIG,{path:INDEX,mode:'100644',type:'blob',sha:b.sha},{path:'README.md',mode:'100644',type:'blob',content:'Encrypted runtime data for КружИИво. The encryption key is held only by the server.\n'}]}});
   const {json:c}=await call('/git/commits',{method:'POST',data:{message:'Initialize encrypted application storage',tree:t.sha,parents:[]}});
   await call('/git/refs',{method:'POST',data:{ref:'refs/heads/'+branch,sha:c.sha},allowed:[422]});
  }
