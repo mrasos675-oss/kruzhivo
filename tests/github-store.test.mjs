@@ -81,3 +81,11 @@ test('GitHub demo login commits the attempt and session rotation together and co
  assert.equal(attempts.find(r=>r.status==='rejected').reason.status,429);
  assert.equal((await storage.list('auth/sessions/')).length,9);
 });
+
+test('demo storage supports a public repository with the same encryption',async()=>{
+ const api=fakeGithub();api.private=false;
+ const storage=make(api,{allowPublicRepository:true});
+ await storage.put('demo-example','example payload');
+ assert.equal(await read(make(api,{allowPublicRepository:true}),'demo-example'),'example payload');
+ for(const blob of api.blobs.values())assert(!blob.includes('example payload'));
+});

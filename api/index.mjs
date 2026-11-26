@@ -118,5 +118,5 @@ return async function handler(req, res) {
 }
 
 }
-const runtimeStorage=createGithubStorage({token:process.env.KRUZHIVO_GITHUB_TOKEN,master:process.env.KRUZHIVO_SESSION_SECRET});
+const runtimeStorage=createGithubStorage({allowPublicRepository:true,token:process.env.KRUZHIVO_GITHUB_TOKEN,master:process.env.KRUZHIVO_SESSION_SECRET});
 export default createHostedHandler({pilotMode:true,storage:runtimeStorage,getRedisAuth:()=>createRedisAuthStore()});
